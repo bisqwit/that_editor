@@ -62,8 +62,9 @@ void FileLoad(char* fn)
             if(Buf[a] == '\r') Buf[a] = '\n';
             if(Buf[a] == '\t')
             {
-                do editline.push_back( ' ' );
-                while(editline.size() % TabSize);
+                size_t nextstop = editline.size() + TabSize;
+                nextstop -= nextstop % TabSize;
+                editline.resize(nextstop, ' ');
             }
             else
                 editline.push_back( Buf[a] );
@@ -252,6 +253,23 @@ static void WaitInput()
     }
 }
 
+void BlockIndent(int offset)
+{
+    unsigned firstx = BlockBeginY, lasty = BlockBeginY;
+    if(BlockBeginX == 0) lasty -= 1;
+
+    unsigned min_indent = ~0u, max_indent = 0;
+    for(unsigned y=BlockBeginY; y<=lasty; ++y)
+    {
+        unsigned indent = 0;
+        while(indent < EditLines[y].size()
+           && EditLines[y][indent] == ' ') ++indent;
+        if(indent < min_indent) min_indent = indent;
+        if(indent > max_indent) max_indent = indent;
+    }
+    break;
+}
+
 int main()
 {
     Syntax.Parse("c.jsf");
@@ -310,11 +328,21 @@ int main()
                         VisRender();
                         break;
                     case 'm': case 'M': case CTRL('M'): // move block
-                    case 'v': case 'V': case CTRL('V'): // paste block
+                    case 'c': case 'C': case CTRL('C'): // paste block
                     case 'y': case 'Y': case CTRL('Y'): // delete block
                     case 'd': case 'D': case CTRL('D'): // save file
                     case 'x': case 'X': case CTRL('X'): // save and exit
                         ;
+                    case 'u': case 'U': case CTRL('U'): // ctrl-pgup
+                        goto ctrlpgup;
+                    case 'v': case 'V': case CTRL('V'): // ctrl-pgdn
+                        goto ctrlpgdn;
+                    case '.': // indent block
+                        BlockIndent(+TabSize);
+                        break;
+                    case ',': // unindent block
+                        BlockIndent(-TabSize);
+                        break;
                 }
                 break;
             }
@@ -333,15 +361,23 @@ int main()
                         if(CurY < WinY) WinY = CurY;
                         break;
                     case 'P': // down
-                        if(CurY < EditLines.size()-1) ++CurY;
+                        if(CurY+1 < EditLines.size()) ++CurY;
                         if(CurY >= WinY+DimY) WinY = CurY - DimY+1;
                         break;
                     case 'K': // left
+                    {
                         if(CurX > 0) --CurX;
+                        else if(CurY > 0) { --CurY; goto end; }
                         break;
+                    }
                     case 'M': // right
+                    {
                         ++CurX;
+                        if(CurY+1 < EditLines.size()
+                        && CurX >= EditLines[CurY].size())
+                            { CurX = 0; ++CurY; }
                         break;
+                    }
                     case 0x47: // home
                     {
                     home:;
@@ -362,10 +398,12 @@ int main()
                         VisSetCursor();
                         break;
                     case 0x84: // ctrl-pgup = goto beginning of file
+                    ctrlpgup:
                         CurY = WinY = 0;
                         CurX = WinX = 0;
                         break;
                     case 0x76: // ctrl-pgdn = goto end of file
+                    ctrlpgdn:
                         CurY = EditLines.size()-1;
                         WinY = 0;
                         if(CurY >= WinY+DimY) WinY = CurY - DimY+1;
@@ -384,5 +422,6 @@ int main()
 exit:;
     CurX = 0; CurY = WinY + VidH; InsertMode = 1;
     VisSetCursor();
+    exit(0);
     return 0;
 }
