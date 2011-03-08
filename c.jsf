@@ -81,12 +81,12 @@
 # Unknown preprocessor words
 =PreprocUnknown	3B
 # OpenMP:
-=OpenMP		09
-=OpenMPkw	0B
-=OpenMPkw2	0B
-=OpenMPcomment	0C
-=OpenMPnonkw	4C
-=OpenMP_space	09
+=OpenMP		02
+=OpenMPkw	0A
+=OpenMPkw2	0A
+=OpenMPcomment	06
+=OpenMPnonkw	24
+=OpenMP_space	0B
 
 # Comments
 =Comment	0C

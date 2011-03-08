@@ -402,7 +402,7 @@ private:
             copy_assign_backwards(T * target, const T* source, size_type count)
     {
         for(size_type a=count; a-- > 0; )
-            target[a] = *source++;
+            target[a] = source[a];
         return source;
     }
     static const T*
