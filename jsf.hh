@@ -15,7 +15,7 @@ public:
     }
     void Parse(FILE* fp)
     {
-        char Buf[512];
+        char Buf[512]={0};
         fprintf(stdout, "Parsing syntax file... "); fflush(stderr);
         while(fgets(Buf, sizeof(Buf), fp))
         {
@@ -31,7 +31,8 @@ public:
         while(colors)
         {
             color* c = colors->next;
-            free(colors); colors = c;
+            free(colors->name);
+            delete colors; colors = c;
         }
         fprintf(stdout,"Done\n"); fflush(stderr);
     }
@@ -53,13 +54,14 @@ public:
     }
     struct Applier
     {
-        virtual int Get(void) = 0;
-        virtual void Recolor(unsigned n, unsigned attr) = 0;
+        virtual cdecl int Get(void) = 0;
+        virtual cdecl void Recolor(register unsigned n, register unsigned attr) = 0;
     };
     void Apply( ApplyState& state, Applier& app)
     {
         for(;;)
         {
+            /*fprintf(stdout, "[State %s]", state.s->name);*/
             if(state.noeat)
                 state.noeat = 0;
             else
@@ -78,14 +80,17 @@ public:
             state.s = o->state;
             if(o->strings)
             {
-                state.buffer.push_back('\0');
-                struct state* n = o->strings==1
-                        ? findstate(o->stringtable, o->numstrings, &state.buffer[0])
-                        : findstate_i(o->stringtable, o->numstrings, &state.buffer[0]);
-                if(n)
+                const char* k = (const char*) &state.buffer[0];
+                unsigned    n = state.buffer.size();
+                struct state* ns = o->strings==1
+                        ? findstate(o->stringtable, o->numstrings, k, n)
+                        : findstate_i(o->stringtable, o->numstrings, k, n);
+                /*fprintf(stdout, "Tried '%.*s' for %p (%s)\n",
+                    n,k, ns, ns->name);*/
+                if(ns)
                 {
-                    state.s = n;
-                    state.recolor = state.buffer.size() - 1;
+                    state.s = ns;
+                    state.recolor = state.buffer.size()+1;
                 }
                 state.buffer.clear();
                 state.buffering = 0;
@@ -110,10 +115,10 @@ private:
     struct table_item
     {
         char*  token;
-        state* state;
+        struct state* state;
         char*  state_name;
     };
-    static int TableItemCompareForSort(const void * a, const void * b)
+    static cdecl int TableItemCompareForSort(const void * a, const void * b)
     {
         table_item * aa = (table_item *)a;
         table_item * bb = (table_item *)b;
@@ -121,7 +126,7 @@ private:
     }
     struct option
     {
-        state* state;
+        struct state* state;
         char*  state_name;
         table_item* stringtable;
         unsigned      numstrings;
@@ -214,6 +219,12 @@ private:
         while(*line == ' ' || *line == '\t') ++line;
         *nameend = '\0';
         o->state_name = strdup(namebegin);
+        /*fprintf(stdout, "'%s' for these: ", o->state_name);
+        for(unsigned c=0; c<256; ++c)
+            if(s->options[c] == o)
+                fprintf(stdout, "%c", c);
+        fprintf(stdout, "\n");*/
+
         while(*line != '\0')
         {
             char* opt_begin = line;
@@ -245,7 +256,7 @@ private:
             unsigned num_strings = 0;
             for(;;)
             {
-                char Buf[512];
+                char Buf[512]={0};
                 if(!fgets(Buf, sizeof(Buf), fp)) break;
                 cleanup(Buf);
                 line = Buf;
@@ -270,6 +281,7 @@ private:
             }
             o->numstrings = num_strings;
             o->stringtable = new table_item[ num_strings ];
+            memset(o->stringtable, 0, num_strings*sizeof(*o->stringtable));
             char * k = (char *) &table_keys[0];
             char * v = (char *) &table_targets[0];
             for(unsigned n=0; n<num_strings; ++n)
@@ -277,6 +289,7 @@ private:
                 //fprintf(stdout, "table[%u]='%s' => '%s'\n", n,k,v);
                 o->stringtable[n].token      = strdup(k);
                 o->stringtable[n].state_name = strdup(v);
+                o->stringtable[n].state = 0;
                 k = strchr(k, '\0') + 1;
                 v = strchr(v, '\0') + 1;
             }
@@ -303,28 +316,40 @@ private:
         *end = '\0';
     }
     static state* findstate
-        (table_item* table, unsigned table_size, const char* s)
+        (table_item* table, unsigned table_size, const char* s, unsigned n=0)
     {
+        if(!n) n = strlen(s);
         while(table_size > 0)
         {
             unsigned half = table_size >> 1;
             table_item* m = table + half;
-            int c = strcmp(m->token, s);
-            if(c == 0) return m->state;
+            int c = strncmp(m->token, s, n);
+            //fprintf(stdout, "strncmp('%s','%.*s',%u)=%d\n",m->token,n,s,n);
+            if(c == 0)
+            {
+                if(m->token[n] == '\0') return m->state;
+                c = m->token[n];
+            }
             if(c < 0) { table = m+1; table_size -= half+1; }
             else      { table_size = half; }
         }
         return 0;
     }
     static state* findstate_i
-        (table_item* table, unsigned table_size, const char* s)
+        (table_item* table, unsigned table_size, const char* s, unsigned n=0)
     {
+        if(!n) n = strlen(s);
         while(table_size > 0)
         {
             unsigned half = table_size >> 1;
             table_item* m = table + half;
-            int c = stricmp(m->token, s);
-            if(c == 0) return m->state;
+            int c = strnicmp(m->token, s, n);
+            //fprintf(stdout, "strnicmp('%s','%.*s',%u)=%d\n",m->token,n,s,n);
+            if(c == 0)
+            {
+                if(m->token[n] == '\0') return m->state;
+                c = m->token[n];
+            }
             if(c < 0) { table = m+1; table_size -= half+1; }
             else      { table_size = half; }
         }
@@ -348,6 +373,12 @@ private:
             //fprintf(stdout, "state[%u]='%s'\n", n, s->name);
             state_cache[n].token = s->name;
             state_cache[n].state = s;
+
+            /*fprintf(stdout, "In state %s:\n", s->name);
+            for(unsigned c=0; c<256; ++c)
+                fprintf(stdout, "  '%c' -> %s\n",
+                    c, s->options[c]->state_name);
+            fprintf(stdout, "\n");*/
         }}
         qsort(state_cache, num_states, sizeof(*state_cache),
               TableItemCompareForSort);
@@ -359,8 +390,8 @@ private:
                 if( ! o->state )
                 {
                     o->state = findstate( state_cache,num_states, o->state_name );
-                    free(o->state_name);
-                    o->state_name = 0;
+                    /*free(o->state_name);
+                    o->state_name = 0;*/
                     unsigned n = o->numstrings;
                     for(unsigned c=0; c<n; ++c)
                     {
@@ -368,8 +399,8 @@ private:
                         if( ! t->state )
                         {
                             t->state = findstate( state_cache,num_states, t->state_name );
-                            free( t->state_name );
-                            t->state_name = 0;
+                            /*free( t->state_name );
+                            t->state_name = 0;*/
             }   }   }   }
         delete[] state_cache;
         while(states && states->next)

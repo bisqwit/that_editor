@@ -79,7 +79,7 @@
 # Comments within preprocessor statements
 =PreprocComment	06
 # Unknown preprocessor words
-=PreprocUnknown	4C
+=PreprocUnknown	3B
 # OpenMP:
 =OpenMP		09
 =OpenMPkw	0B
@@ -92,10 +92,10 @@
 =Comment	0C
 
 # Most operators () ? ~ . / : * / + - < >
-=Special	02
+=Special	03
 
 # More operators [] {} , ;
-=Special2	0A
+=Special2	02
 
 # The "::" operator
 =GlueColor	06
@@ -104,7 +104,7 @@
 =AssignColor	0A
 
 # Numeric constants
-=Numeric 	0D
+=Numeric 	09
 # Errors in numeric constants
 =InvalidNumber	4D
 # Numeric suffixes (U,L,F)
@@ -464,7 +464,7 @@ done
 	"'"		charbegin	recolor=-1 noeat
 	"a-z$A-Z_"	ident		recolor=-1 buffer
 	"L"		maybe_wide      recolor=-1 buffer
-	"\n"		newline
+	"\n"		newline recolor=-1
 
 :space Background
         *               idle noeat
@@ -535,7 +535,7 @@ done
 :line_comment Comment
 	*		line_comment
 	"\\"		line_comment_escape
-	"\n"		newline
+	"\n"		newline recolor=-1
 :line_comment_escape Comment
 	*		line_comment
 

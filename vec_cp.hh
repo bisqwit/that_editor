@@ -1,9 +1,15 @@
-#ifndef bqtCharVecHH
-#define bqtCharVecHH
+#ifndef bqtCharPtrVecHH
+#define bqtCharPtrVecHH
 
-#define T       unsigned char*
+#include "vec_c.hh"
+
+#define UsePlacementNew
+
+#define T       CharVecType
 #define VecType CharPtrVecType
+
 #include "vecbase.hh"
+
 #undef VecType
 #undef T
 

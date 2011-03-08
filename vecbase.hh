@@ -4,8 +4,7 @@
 class VecType
 {
 public:
-    typedef unsigned char T;
-    typedef unsigned /*long*/ SizeType;
+    //typedef unsigned char T;
 
     typedef T value_type;
     typedef T * iterator;
@@ -14,17 +13,25 @@ public:
     typedef const T * const_pointer;
     typedef T & reference;
     typedef const T & const_reference;
-    typedef SizeType size_type;
+    typedef size_t size_type;
 
 public:
     VecType() : data(0),len(0),cap(0) { }
     ~VecType() { clear(); if(cap) deallocate(data,cap); }
 
+    void Construct() { data=0; len=0; cap=0; }
+    void Destruct()  { clear(); if(cap) deallocate(data,cap); }
+    void Construct(const VecType& b)
+    {
+        data=0; len=b.len; cap=b.len;
+        if(len) { data = allocate(len); copy_construct(&data[0], &b.data[0],len); }
+    }
+
     VecType(size_type length) : data(0),len(0),cap(0)
     {
         resize(length);
     }
-    VecType(size_type length, T value) : data(0),len(0),cap(0)
+    VecType(size_type length, const T& value) : data(0),len(0),cap(0)
     {
         resize(length, value);
     }
@@ -69,8 +76,8 @@ public:
     }
 #endif
 
-    void assign(const unsigned char* first,
-                const unsigned char* last)
+    void assign(const T* first,
+                const T* last)
     {
         size_type newlen = (size_type) (last-first);
         if(cap < newlen)
@@ -112,20 +119,30 @@ public:
     const_reverse_iterator rend()   const { return const_reverse_iterator( begin() ); }
     */
 
-    void push_back(unsigned char value)
+    void push_back(const T& value)
     {
         //insert(end(), value);
         if(len >= cap) reserve(cap ? cap*2 : default_size());
+      #ifdef UsePlacementNew
+        data[len++].Construct(value);
+      #else
         /*new(&data[len++]) T ( value );*/ data[len++] = value;
+      #endif
     }
 
-    iterator insert(iterator pos, unsigned char value)
+    iterator insert(iterator pos, const T& value)
     {
         size_type ins_pos = pos - begin();
         if(len < cap)
         {
             if(ins_pos == len)
+            {
+              #ifdef UsePlacementNew
+                data[ins_pos].Construct(value);
+              #else
                 /*new(&data[ins_pos]) T( value );*/ data[ins_pos] = value;
+              #endif
+            }
             else
             {
                 move_construct(&data[len], &data[len-1], 1);
@@ -139,13 +156,21 @@ public:
         if(ins_pos == len)
         {
             reserve(newcap);
+          #ifdef UsePlacementNew
+            data[ins_pos].Construct(value);
+          #else
             /*new(&data[ins_pos]) T( value );*/ data[ins_pos] = value;
+          #endif
             ++len;
             return data+ins_pos;
         }
         T * newdata = allocate(newcap);
         move_construct(&newdata[0], &data[0], ins_pos);
+      #ifdef UsePlacementNew
+        newdata[ins_pos].Construct(value);
+      #else
         /*new(&newdata[ins_pos]) T( value );*/ newdata[ins_pos] = value;
+      #endif
         move_construct(&newdata[ins_pos+1], &data[ins_pos], len-ins_pos);
         destroy(&data[0], len);
         deallocate(data, cap);
@@ -156,8 +181,8 @@ public:
     }
 
     void insert(iterator pos,
-                const unsigned char* first,
-                const unsigned char* last)
+                const T* first,
+                const T* last)
     {
         size_type ins_pos = pos - begin();
         size_type count   = (size_type) (last-first);
@@ -257,7 +282,7 @@ public:
         }
     }
 
-    void resize(size_type newlen, unsigned char value)
+    void resize(size_type newlen, const T& value)
     {
         if(newlen < len)
         {
@@ -314,17 +339,30 @@ private:
     static void construct(T * target, size_type count)
     {
         for(size_type a=0; a<count; ++a)
+        {
+      #ifdef UsePlacementNew
+            target[a].Construct();
+      #else
             /*new(&target[a]) T();*/ target[a] = 0;
+      #endif
+        }
     }
-    static void construct(T * target, size_type count, unsigned char param)
+    static void construct(T * target, size_type count, const T& param)
     {
         for(size_type a=0; a<count; ++a)
+      #ifdef UsePlacementNew
+            target[a].Construct(param);
+      #else
             /*new(&target[a]) T(param);*/ target[a] = param;
+      #endif
     }
     static void destroy(T * target, size_type count)
     {
-        /*for(size_type a=count; a-- > 0; )
-            target[a].~T();*/
+      #ifdef UsePlacementNew
+        for(size_type a=count; a-- > 0; )
+            /*target[a].~T();*/
+            target[a].Destruct();
+      #endif
     }
     static void move_assign(T * target, T * source, size_type count)
     {
@@ -353,25 +391,29 @@ private:
         copy_construct(target, source, count);
 #endif
     }
-    static const unsigned char *
-            copy_assign(T * target, const unsigned char * source, size_type count)
+    static const T*
+            copy_assign(T * target, const T* source, size_type count)
     {
         for(size_type a=0; a<count; ++a)
             target[a] = *source++;
         return source;
     }
-    static const unsigned char *
-            copy_assign_backwards(T * target, const unsigned char * source, size_type count)
+    static const T*
+            copy_assign_backwards(T * target, const T* source, size_type count)
     {
         for(size_type a=count; a-- > 0; )
             target[a] = *source++;
         return source;
     }
-    static const unsigned char *
-            copy_construct(T * target, const unsigned char * source, size_type count)
+    static const T*
+            copy_construct(T * target, const T* source, size_type count)
     {
         for(size_type a=0; a<count; ++a)
+          #ifdef UsePlacementNew
+            target[a].Construct(*source++);
+          #else
             /*new(&target[a]) T( *source++ );*/ target[a] = *source++;
+          #endif
         return source;
     }
 
