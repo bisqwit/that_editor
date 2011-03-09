@@ -16,17 +16,10 @@
 #include "vec_sp.hh"
 
 #include "jsf.hh"
-#include "mario.hh"
-
-#ifdef __BORLANDC__
-unsigned short* VidMem = (unsigned short *) MK_FP(0xB800, 0x0000);
-#else
-unsigned short VidMem[132*43];
-#endif
+#include "vga.hh"
 
 const unsigned UnknownColor = 0x2400;
 
-unsigned char VidW=80, VidH=25, VidCellHeight=16;
 char StatusLine[256] =
 "Ad-hoc programming editor - (C) 2011-03-08 Joel Yliluoma";
 
@@ -142,16 +135,8 @@ struct ApplyEngine: public JSF::Applier
     }
 };
 
-void VisGetGeometry()
-{
-#ifdef __BORLANDC__
-    _asm { mov ah, 0x0F; int 0x10; mov VidW, ah }
-    _asm { mov ax, 0x1130; xor bx,bx; int 0x10; mov VidH, dl; mov VidCellHeight, cl }
-    if(VidH == 0) VidH = 25; else VidH += 1;
-    _asm { mov ax, 0x1003; xor bx,bx; int 0x10 } // Disable blink-bit
-    MarioGetFont();
-#endif
-}
+#include "mario.hh"
+
 void VisSetCursor()
 {
 #ifdef __BORLANDC__
@@ -285,6 +270,11 @@ void WaitInput()
                 int horrible_sight =
                     (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
                     (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
+                /* If the sight on the very screen currently
+                 * is "horrible", do, as a quick fix, a scan
+                 * of the current screen to at least make it
+                 * look different.
+                 */
 
                 if(SyntaxCheckingNeeded != SyntaxChecking_Interrupted
                 || horrible_sight)
@@ -301,15 +291,13 @@ void WaitInput()
                 }
                 Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
 
-                SyntaxCheckingNeeded = SyntaxChecking_Interrupted;
+                SyntaxCheckingNeeded =
+                    !SyntaxCheckingApplier.finished
+                    ? SyntaxChecking_Interrupted
+                    : (SyntaxCheckingApplier.begin_line == 0)
+                        ? SyntaxChecking_IsPerfect
+                        : SyntaxChecking_DoingFull;
 
-                if(SyntaxCheckingApplier.finished)
-                {
-                    if(SyntaxCheckingApplier.begin_line == 0)
-                        SyntaxCheckingNeeded = SyntaxChecking_IsPerfect;
-                    else
-                        SyntaxCheckingNeeded = SyntaxChecking_DoingFull;
-                }
                 wx=WinX; wy=WinY;
                 VisRender();
             }
@@ -385,8 +373,6 @@ void PerformEdit(
     {
         unsigned insert_length = insert_chars.size();
         event.n_delete = insert_length;
-        
-        
         
     }
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
@@ -498,13 +484,20 @@ void FindPair()
 
 int main()
 {
+#ifdef __BORLANDC__
+    InstallMario();
+#endif
     Syntax.Parse("c.jsf");
     FileLoad("sample.cpp");
     fprintf(stderr, "Beginning render\n");
-    VisGetGeometry();
+
+    VgaGetMode();
     VisSetCursor();
 
-    unsigned DimX = VidW, DimY = VidH-1;
+    //VgaSetCustomMode(90,30, 16, 1, 0,0);
+
+    int use9bit = 1;
+    int dblw    = 0, dblh = 0;
 
     #define CTRL(c) ((c) & 0x1F)
     for(;;)
@@ -521,6 +514,7 @@ int main()
             StatusLine[0] = '\0';
             VisRender();
         }
+        unsigned DimX = VidW, DimY = VidH-1;
         switch(c)
         {
             case CTRL('V'): // ctrl-V
@@ -627,7 +621,8 @@ int main()
                 break;
             }
             case CTRL('R'):
-                VisGetGeometry();
+            refresh:
+                VgaGetMode();
                 VisSetCursor();
                 VisRender();
                 break;
@@ -754,6 +749,28 @@ int main()
                             break;
                         }
                         break;
+                    case 0x3B: VidH -= 1; goto newmode; // F1
+                    case 0x3C: VidH += 1; goto newmode; // F2
+                    case 0x3D: VidW -= 2; goto newmode; // F3
+                    case 0x3E: VidW += 2; goto newmode; // F4
+                    case 0x3F: use9bit = !use9bit; goto newmode; // F5
+                    case 0x40: dblw = !dblw; goto newmode; // F6
+                    case 0x41: dblh = !dblh; goto newmode; // F7
+                    case 0x42: // F8
+                        if(VidCellHeight==16) VidCellHeight=8;
+                        else if(VidCellHeight==8) VidCellHeight=14;
+                        else if(VidCellHeight==14) VidCellHeight=16;
+                    newmode:
+                        VgaSetCustomMode(VidW,VidH, VidCellHeight,
+                                         use9bit, dblw, dblh);
+                        VisRender();
+                        sprintf(StatusLine,
+                            "Selected text mode: %ux%u with %ux%u font (%ux%u)",
+                                VidW,VidH,
+                                use9bit ? 9 : 8, VidCellHeight,
+                                VidW * (use9bit ? 9 : 8) * (1+dblw),
+                                VidH * VidCellHeight * (1+dblh));
+                        break;
                 }
                 break;
             }
@@ -839,6 +856,9 @@ int main()
 exit:;
     CurX = 0; CurY = WinY + VidH; InsertMode = 1;
     VisSetCursor();
+#ifdef __BORLANDC__
+    DeInstallMario();
+#endif
     exit(0);
     return 0;
 }

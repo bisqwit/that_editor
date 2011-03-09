@@ -8,10 +8,10 @@ public:
 
     typedef T value_type;
     typedef T * iterator;
-    typedef const T * const_iterator;
     typedef T * pointer;
-    typedef const T * const_pointer;
     typedef T & reference;
+    typedef const T * const_iterator;
+    typedef const T * const_pointer;
     typedef const T & const_reference;
     typedef size_t size_type;
 
@@ -313,7 +313,7 @@ public:
 
     void swap(VecType& b)
     {
-       /* std::swap(data, b.data);
+     /* std::swap(data, b.data);
         std::swap(len,  b.len);
         std::swap(cap,  b.cap);
         */

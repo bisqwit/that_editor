@@ -3,6 +3,13 @@
 #include <math.h>
 #include <stdlib.h>
 #include <dos.h> // for outportb, inportb
+/*
+	db 'Copyright (C) 2011-03-03 Joel Yliluoma, http://iki.fi/bisqwit/',13,10
+	db 'JAINPUT','Ğ€ Ò‚ØÇ—Ò‚Ö†Ò‚¢£',0xFF
+	db 32
+	db 'Æ–¤¥¸¹ûÌ-Ò‚Â’÷øŠŒÌ- Ğ€ ˜™®ğ: ', EnableToggleKey1 & 255
+
+*/
 
 // Raytracing is mathematics-heavy. Declare mathematical datatypes
 inline double dmin(double a,double b) { return a<b ? a : b; }
