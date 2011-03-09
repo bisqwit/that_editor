@@ -494,10 +494,9 @@ int main()
     VgaGetMode();
     VisSetCursor();
 
-    //VgaSetCustomMode(90,30, 16, 1, 0,0);
-
-    int use9bit = 1;
-    int dblw    = 0, dblh = 0;
+    outportb(0x3C4, 1); int use9bit = !(inportb(0x3C5) & 1);
+    outportb(0x3C4, 1); int dblw    = (inportb(0x3C5) >> 3) & 1;
+    outportb(0x3D4, 9); int dblh    = inportb(0x3D5) >> 7;
 
     #define CTRL(c) ((c) & 0x1F)
     for(;;)

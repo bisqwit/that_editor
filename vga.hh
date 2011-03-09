@@ -139,23 +139,24 @@ void VgaSetCustomMode(
     for(unsigned a=0; a<9; ++a) outport(0x3CE, a | (Gfx[a] << 8));}
 
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
-                                0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,
+                                 0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,
                                 is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
     _asm { mov dx,0x3DA; in al,dx }
     {for(unsigned a=0x10; a<0x15; ++a)
         { if(a == 0x11) continue;
           outportb(0x3C0, a);
           outportb(0x3C0, Att[a]); }} }
-
-    unsigned feature = *(unsigned char*)MK_FP(0x40,0x10);
-    feature = (feature & ~0x30) | 0x20;
-    *(unsigned char*)MK_FP(0x40,0x65) = 0x29;
     _asm { mov dx,0x3DA; in al,dx }
     outportb(0x3C0, 0x20);
 
+    *(unsigned char*)MK_FP(0x40,0x10) &= ~0x30;
+    *(unsigned char*)MK_FP(0x40,0x10) |= 0x20;
+
+    *(unsigned char*)MK_FP(0x40,0x65) = 0x29;
     *(unsigned char*)MK_FP(0x40, 0x4A) = width;
     *(unsigned char*)MK_FP(0x40, 0x84) = height-1;
     *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
+    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
     VidW = width;
     VidH = height;
     VidCellHeight = font_height;
