@@ -72,6 +72,8 @@ void VgaSetCustomMode(
     if(font_height ==14) { _asm { mov ax, 0x1101; mov bl, 0; int 0x10 } }
     if(font_height == 8) { _asm { mov ax, 0x1102; mov bl, 0; int 0x10 } }
 
+    /* This script is, for the most part, copied from DOSBox. */
+
     {unsigned char Seq[5] = { 0, !is_9pix + 8*is_half, 3, 0, 6 };
     for(unsigned a=0; a<5; ++a) outport(0x3C4, a | (Seq[a] << 8));}
 
@@ -120,13 +122,13 @@ void VgaSetCustomMode(
     outport(0x3D4, 0x09 | (max_scanline << 8));
     outport(0x3D4, 0x14 | (underline << 8));
     outport(0x3D4, 0x07 | (overflow << 8));
-    outport(0x3D4, 0x5D | (hor_overflow << 8)); // S3 trio
-    outport(0x3D4, 0x5E | (ver_overflow << 8)); // S3 trio
+    outport(0x3D4, 0x5D | (hor_overflow << 8)); // S3 trio extension
+    outport(0x3D4, 0x5E | (ver_overflow << 8)); // S3 trio extension
     unsigned offset = hdispend / 2;
     outport(0x3D4, 0x13 | (offset << 8));
     outport(0x3D4, 0x51 | (((offset & 0x300) >> 4) << 8));
     outport(0x3D4, 0x69 | (0 << 8)); // S3 trio
-    outport(0x3D4, 0x5E | (ver_overflow << 8)); // (repeat)
+    outport(0x3D4, 0x5E | (ver_overflow << 8)); // (repeat for some reason)
     unsigned modecontrol = 0xA3;
     outport(0x3D4, 0x17 | (modecontrol << 8));
     // Enable write protection

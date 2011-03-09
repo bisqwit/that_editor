@@ -197,6 +197,11 @@ void VisRenderStatus()
             unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
             unsigned char c = StatusLine[p]; if(!c) c = 0x20;
             if(c != 0x20) color = (color & 0xF000u) | c;
+            switch(color>>12)
+            {
+                case 8: color |= 0x700; break;
+                case 0: color |= 0x800; break;
+            }
             Stat[x] = color;
             if(StatusLine[p]) ++p;
         }}
@@ -207,7 +212,9 @@ void VisRender()
     WordVecType EmptyLine;
     unsigned short* Tgt = VidMem + VidW;
 
-    unsigned winh = VidH;
+    unsigned winh = VidH - 1;
+    if(StatusLine[0]) --winh;
+
     for(unsigned y=0; y<winh; ++y)
     {
         unsigned ly = WinY + y;
@@ -753,18 +760,43 @@ int main()
                     case 0x3D: VidW -= 2; goto newmode; // F3
                     case 0x3E: VidW += 2; goto newmode; // F4
                     case 0x3F: use9bit = !use9bit; goto newmode; // F5
-                    case 0x40: dblw = !dblw; goto newmode; // F6
+                    case 0x40: if(shift) goto shiftF6;
+                        if(dblw) { dblw=0; VidW*=2; }
+                        else     { dblw=1; VidW/=2; VidW&=~1; }
+                        goto newmode; // F6
+                    case 0x59: shiftF6:
+                               dblw = !dblw; goto newmode; // shift-F6
                     case 0x41: dblh = !dblh; goto newmode; // F7
+                    case 0x5A: dblh = !dblh; goto newmode; // shift-F7
+                    case 0x5B: shiftF8:
+                               if(VidCellHeight == 16) VidCellHeight = 8;
+                          else if(VidCellHeight ==  8) VidCellHeight = 14;
+                          else VidCellHeight = 16;
+                          goto newmode;                    // shift-F8
                     case 0x42: // F8
-                        if(VidCellHeight==16) VidCellHeight=8;
-                        else if(VidCellHeight==8) VidCellHeight=14;
-                        else if(VidCellHeight==14) VidCellHeight=16;
+                        if(shift) goto shiftF8;
+                        if(VidCellHeight==16)
+                            { VidCellHeight=8;
+                              if(!dblh) dblh = 1;
+                              if(use9bit) use9bit=0;
+                            }
+                        else if(VidCellHeight==8)
+                            { VidCellHeight=14;
+                              if(dblh) { dblh = 0; /*VidH = VidH*16/14.0+0.5;*/ }
+                            }
+                        else if(VidCellHeight==14)
+                            { VidCellHeight=16;
+                              if(!use9bit) use9bit=1;
+                              /*if(!dblh) { VidH = VidH*14/16.0+0.5; }*/
+                            }
                     newmode:
                         VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                          use9bit, dblw, dblh);
+                        VisSetCursor();
                         VisRender();
                         sprintf(StatusLine,
-                            "Selected text mode: %ux%u with %ux%u font (%ux%u)",
+                            "%s: %ux%u with %ux%u font (%ux%u)",
+                                VidW < 50 ? "Mode chg" : "Selected text mode",
                                 VidW,VidH,
                                 use9bit ? 9 : 8, VidCellHeight,
                                 VidW * (use9bit ? 9 : 8) * (1+dblw),
