@@ -135,8 +135,54 @@ struct ApplyEngine: public JSF::Applier
     }
 };
 
+
 #include "mario.hh"
 
+unsigned CursorCounter = 0;
+
+void VisSoftCursor(int mode)
+{
+    if(!C64palette) return;
+
+    /* Modes:
+     *   0 = blink ticker (100 Hz)
+     *   1 = screen contents have changed
+     *  -1 = request undo the cursor at current location
+     */
+    static unsigned short* cursor_location = 0;
+    static unsigned evacuation = 0;
+
+    unsigned char cux, cuy;
+    _asm { mov ah, 3; mov bh, 0; int 0x10; mov cux, dl; mov cuy, dh; xchg cx,cx }
+    unsigned short* now_location = GetVidMem(cux,cuy); //VidMem + cux + cuy * unsigned(VidW + C64palette*4);
+
+    if(mode == 1) // screen redrawn
+    {
+        cursor_location = now_location;
+        evacuation      = *now_location;
+        CursorCounter   = 0;
+    }
+
+    if(mode == -1 || now_location != cursor_location) // undo
+    {
+        if(cursor_location) *cursor_location = evacuation;
+        if(mode == -1) { cursor_location = 0; return; }
+        cursor_location = now_location;
+        evacuation      = *now_location;
+        CursorCounter   = 0;
+    }
+
+    switch(CursorCounter++)
+    {
+        case 60:
+            CursorCounter=0;
+        case 0:
+            *cursor_location = ((evacuation&0xF00)<<4)|evacuation;
+            break;
+        case 30:
+            *cursor_location = evacuation;
+    }
+}
 void VisSetCursor()
 {
 #ifdef __BORLANDC__
@@ -145,14 +191,16 @@ void VisSetCursor()
     unsigned char cux = cx, cuy = cy;
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
     size = (size << 8) | (VidCellHeight-1);
+    if(C64palette) size = 0x3F3F;
     _asm { mov ah, 2; mov bh, 0; mov dh, cuy; mov dl, cux; int 0x10 }
     _asm { mov ah, 1; mov cx, size; int 0x10 }
+    CursorCounter=0;
 #endif
 }
 void VisRenderStatus()
 {
     WordVecType Hdr(VidW);
-    unsigned short* Stat = VidMem + VidW * (VidH-1);
+    unsigned short* Stat = GetVidMem(0, VidH-1);
 
     time_t t = time(0);
     struct tm* tm = localtime(&t);
@@ -175,6 +223,7 @@ void VisRenderStatus()
         unsigned c1 = slide[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
         unsigned c2 = slide[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
         unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
+        if(C64palette) color = 0x7020;
 
         if(x == 0 && WaitingCtrl)
             color = (color&0xF000) | '^';
@@ -195,28 +244,33 @@ void VisRenderStatus()
             unsigned c1 = slide2[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
             unsigned c2 = slide2[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
             unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
+            if(C64palette) color = 0x7020;
             unsigned char c = StatusLine[p]; if(!c) c = 0x20;
             if(c != 0x20) color = (color & 0xF000u) | c;
-            switch(color>>12)
-            {
-                case 8: color |= 0x700; break;
-                case 0: color |= 0x800; break;
-            }
+            if(!C64palette && c != 0x20)
+                switch(color>>12)
+                {
+                    case 8: color |= 0x700; break;
+                    case 0: color |= 0x800; break;
+                }
             Stat[x] = color;
             if(StatusLine[p]) ++p;
         }}
-    MarioTranslate(&Hdr[0], VidMem, VidW);
+    MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
 }
 void VisRender()
 {
     WordVecType EmptyLine;
-    unsigned short* Tgt = VidMem + VidW;
 
     unsigned winh = VidH - 1;
     if(StatusLine[0]) --winh;
 
+    VisSoftCursor(-1);
+
     for(unsigned y=0; y<winh; ++y)
     {
+        unsigned short* Tgt = GetVidMem(0, y+1);
+
         unsigned ly = WinY + y;
 
         WordVecType* line = &EmptyLine;
@@ -250,6 +304,7 @@ void VisRender()
         while(x++ < xl)
             *Tgt++ = trail;
     }
+    VisSoftCursor(1);
 }
 
 unsigned wx = ~0u, wy = ~0u, cx = ~0u, cy = ~0u;
@@ -266,13 +321,17 @@ JSF::ApplyState SyntaxCheckingState;
 ApplyEngine     SyntaxCheckingApplier;
 void WaitInput()
 {
-    if(cx != CurX || cy != CurY) { cx=CurX; cy=CurY; VisSetCursor(); }
+    if(cx != CurX || cy != CurY) { cx=CurX; cy=CurY; VisSoftCursor(-1); VisSetCursor(); }
     if(StatusLine[0] && CurY >= WinY+VidH-2) WinY += 2;
     if(!kbhit())
     {
         while(CurX < WinX) WinX -= 8;
         while(CurX >= WinX + VidW) WinX += 8;
-        if(wx != WinX || wy != WinY) VisSetCursor();
+        if(wx != WinX || wy != WinY)
+        {
+            VisSoftCursor(-1);
+            VisSetCursor();
+        }
         do {
             if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
             {
@@ -310,8 +369,10 @@ void WaitInput()
                 wx=WinX; wy=WinY;
                 VisRender();
             }
-            if(wx != WinX || wy != WinY) { wx=WinX; wy=WinY; VisRender(); }
+            if(wx != WinX || wy != WinY)
+                { wx=WinX; wy=WinY; VisRender(); }
             VisRenderStatus();
+            VisSoftCursor(0);
         #ifdef __BORLANDC__
             _asm { hlt }
         #endif
@@ -748,15 +809,14 @@ int main()
                         break;
                     case 0x53: // delete
                     delkey:
-                        {
-                            unsigned eol_x = EditLines[CurY].size();
-                            if(eol_x > 0) --eol_x;
-                            if(CurX > eol_x) { CurX = eol_x; break; } // just do end-key
-                            WordVecType empty;
-                            PerformEdit(CurX,CurY, 1u, empty);
-                            break;
-                        }
+                    {
+                        unsigned eol_x = EditLines[CurY].size();
+                        if(eol_x > 0) --eol_x;
+                        if(CurX > eol_x) { CurX = eol_x; break; } // just do end-key
+                        WordVecType empty;
+                        PerformEdit(CurX,CurY, 1u, empty);
                         break;
+                    }
                     case 0x3B: VidH -= 1; goto newmode; // F1
                     case 0x3C: VidH += 1; goto newmode; // F2
                     case 0x3D: VidW -= 2; goto newmode; // F3
@@ -803,7 +863,12 @@ int main()
                                 use9bit ? 9 : 8, VidCellHeight,
                                 VidW * (use9bit ? 9 : 8) * (1+dblw),
                                 VidH * VidCellHeight * (1+dblh));
+                        if(C64palette)
+                            strcpy(StatusLine, "READY");
                         break;
+                    case 0x43: // F9
+                        C64palette = !C64palette;
+                        goto newmode;
                 }
                 break;
             }
