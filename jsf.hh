@@ -63,7 +63,10 @@ public:
         {
             /*fprintf(stdout, "[State %s]", state.s->name);*/
             if(state.noeat)
+            {
                 state.noeat = 0;
+                if(!state.recolor) state.recolor = 1;
+            }
             else
             {
                 int ch = app.Get();

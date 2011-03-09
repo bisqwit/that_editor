@@ -317,9 +317,9 @@ public:
         std::swap(len,  b.len);
         std::swap(cap,  b.cap);
         */
-        size_type l=b.len; b.len=len; len=l;
-        l=b.cap; b.cap=cap; cap=l;
-        T * d = b.data; b.data=data; data=d;
+        {size_type l=b.len; b.len=len; len=l;}
+        {size_type l=b.cap; b.cap=cap; cap=l;}
+        {T * d = b.data; b.data=data; data=d;}
     }
 
     int empty() const { return len==0; }
@@ -370,7 +370,12 @@ private:
         for(size_type a=0; a<count; ++a)
             target[a] = std::move(source[a]);
 #else
+  #ifdef UsePlacementNew
+        for(size_type a=0; a<count; ++a)
+            target[a].swap(source[a]);
+  #else
         copy_assign(target, source, count);
+  #endif
 #endif
     }
     static void move_assign_backwards(T * target, T * source, size_type count)
@@ -379,7 +384,12 @@ private:
         for(size_type a=count; a-- > 0; )
             target[a] = std::move(source[a]);
 #else
+  #ifdef UsePlacementNew
+        for(size_type a=count; a-- > 0; )
+            target[a].swap(source[a]);
+  #else
         copy_assign_backwards(target, source, count);
+  #endif
 #endif
     }
     static void move_construct(T * target, T * source, size_type count)
@@ -388,7 +398,15 @@ private:
         for(size_type a=0; a<count; ++a)
             new(&target[a]) T( std::move(source[a]) );
 #else
+  #ifdef UsePlacementNew
+        for(size_type a=0; a<count; ++a)
+        {
+            target[a].Construct();
+            target[a].swap(source[a]);
+        }
+  #else
         copy_construct(target, source, count);
+  #endif
 #endif
     }
     static const T*

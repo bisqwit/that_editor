@@ -447,8 +447,8 @@ done
 
 # All following states are for when we're not in a preprocessor line
 
-:idle Mystery
-	*		idle
+:idle Background
+	*		idle_mystery	recolor=-1
 	"()?~"		special		recolor=-1
 	"[]{},;"	special2	recolor=-1
 	":"		maybe_glue	recolor=-1
@@ -465,7 +465,8 @@ done
 	"a-z$A-Z_"	ident		recolor=-1 buffer
 	"L"		maybe_wide      recolor=-1 buffer
 	"\n"		newline recolor=-1
-
+:idle_mystery Mystery
+	*		idle noeat
 :space Background
         *               idle noeat
         "\n"		trailing_space recolor=-2
