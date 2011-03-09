@@ -5,8 +5,8 @@ unsigned short* VidMem = (unsigned short *) MK_FP(0xB800, 0x0000);
 #endif
 
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
-
 unsigned char* VgaFont = 0;
+int C64palette = 0;
 
 void VgaGetFont()
 {
@@ -39,14 +39,39 @@ void VgaGetMode()
 #endif
 }
 
-void VgaSetMode(unsigned modeno, int is_doublewidth)
+void VgaSetMode(unsigned modeno)
 {
     if(modeno < 0x100)
         _asm { mov ax, modeno; int 0x10 }
     else
         _asm { mov bx, modeno; mov ax, 0x4F02; int 0x10 }
 
-    outport(0x3C4, is_doublewidth ? 0x0801 : 0x0101);
+    static const unsigned long c64pal[16] =
+    {
+        0x4242E7ul, // 0
+        0xA5A5FFul,
+        0x00A800ul,
+        0xA5A5FFul,
+        0xA5A5FFul, // 4
+        0xA800A8ul,
+        0xA5A5FFul,
+        0xA5A5FFul,
+        0x4242E7ul, // 8
+        0xA5A5FFul,
+        0x54FC54ul, 
+        0xA5A5FFul,
+        0xFC5454ul, // C
+        0xA800A8ul,
+        0xFCFC00ul,
+        0x54FCFCul
+    };
+    outportb(0x3C8, 0x20);
+    for(unsigned a=0; a<16; ++a)
+    {
+        outportb(0x3C9, c64pal[a] >> 16);
+        outportb(0x3C9, c64pal[a] >> 8);
+        outportb(0x3C9, c64pal[a]);
+    }
 }
 
 void VgaSetCustomMode(
@@ -66,7 +91,7 @@ void VgaSetCustomMode(
     // Set standard 80x25 mode as a baseline
     // This triggers font reset on JAINPUT.
     *(unsigned char*)MK_FP(0x40,0x87) |= 0x80;
-    _asm { mov ax, 3; int 0x10 }
+    VgaSetMode(3);
     *(unsigned char*)MK_FP(0x40,0x87) &= ~0x80;
 
     if(font_height ==14) { _asm { mov ax, 0x1101; mov bl, 0; int 0x10 } }
@@ -141,10 +166,15 @@ void VgaSetCustomMode(
     for(unsigned a=0; a<9; ++a) outport(0x3CE, a | (Gfx[a] << 8));}
 
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
-                                 0x30,0x31,0x32,0x33,0x34,0x35,0x36,0x37,
-                                is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
+                                 0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
+                                 is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
+    if(C64palette)
+    {
+        for(unsigned a=0; a<0x10; ++a) Att[a] = 0x20+a;
+    }
+
     _asm { mov dx,0x3DA; in al,dx }
-    {for(unsigned a=0x10; a<0x15; ++a)
+    {for(unsigned a=0x0; a<0x15; ++a)
         { if(a == 0x11) continue;
           outportb(0x3C0, a);
           outportb(0x3C0, Att[a]); }} }

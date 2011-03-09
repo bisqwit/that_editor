@@ -240,6 +240,8 @@ void VisRender()
                          | ((attr >> 4u) & 0xF00u)
                          | ((attr << 4u) & 0xF000u);
                 }
+                if(C64palette && islower(attr & 0xFF))
+                    attr &= 0xFFDFu;
 
                 do *Tgt++ = attr; while(lx > ++x);
                 if(x >= xl) break;
