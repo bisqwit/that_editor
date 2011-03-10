@@ -57,6 +57,7 @@ void VgaGetMode()
     VgaGetFont();
 #endif
     if(C64palette) { VidW -= 4; VidH -= 5; }
+    if(FatMode) VidW /= 2;
 }
 
 void VgaSetMode(unsigned modeno)
