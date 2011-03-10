@@ -188,6 +188,7 @@ void VisSetCursor()
 #ifdef __BORLANDC__
     unsigned cx = WinX > CurX ? 0 : CurX-WinX;       if(cx >= VidW) cx = VidW-1;
     unsigned cy = WinY > CurY ? 1 : CurY-WinY; ++cy; if(cy >= VidH) cy = VidH-1;
+    if(FatMode) cx *= 2;
     unsigned char cux = cx, cuy = cy;
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
     size = (size << 8) | (VidCellHeight-1);
@@ -199,7 +200,7 @@ void VisSetCursor()
 }
 void VisRenderStatus()
 {
-    WordVecType Hdr(VidW);
+    WordVecType Hdr(VidW*2);
     unsigned short* Stat = GetVidMem(0, VidH-1);
 
     time_t t = time(0);
@@ -235,7 +236,10 @@ void VisRenderStatus()
             color = (color&0xF000) | Buf1[x-x1a];
         else if(x >= x2a && x < x2b && Buf2[x-x2a] != ' ')
             color = (color&0xF000) | Buf2[x-x2a];
-        Hdr[x] = color;
+        if(FatMode)
+            { Hdr[x+x] = color; Hdr[x+x+1] = color|0x80; }
+        else
+            Hdr[x] = color;
     }}
     if(StatusLine[0])
         {for(unsigned p=0,x=0; x<VidW; ++x)
@@ -253,7 +257,10 @@ void VisRenderStatus()
                     case 8: color |= 0x700; break;
                     case 0: color |= 0x800; break;
                 }
-            Stat[x] = color;
+            if(FatMode)
+                { Stat[x+x] = color; Stat[x+x+1] = color|0x80; }
+            else
+                Stat[x] = color;
             if(StatusLine[p]) ++p;
         }}
     MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
@@ -297,12 +304,18 @@ void VisRender()
                 if(C64palette && islower(attr & 0xFF))
                     attr &= 0xFFDFu;
 
-                do *Tgt++ = attr; while(lx > ++x);
+                do {
+                    *Tgt++ = attr;
+                    if(FatMode) *Tgt++ = attr | 0x80;
+                } while(lx > ++x);
                 if(x >= xl) break;
             }
         }
         while(x++ < xl)
+        {
             *Tgt++ = trail;
+            if(FatMode) *Tgt++ = trail | 0x80;
+        }
     }
     VisSoftCursor(1);
 }
@@ -831,14 +844,25 @@ int main()
                     case 0x41: dblh = !dblh; goto newmode; // F7
                     case 0x5A: dblh = !dblh; goto newmode; // shift-F7
                     case 0x5B: shiftF8:
-                               if(VidCellHeight == 16) VidCellHeight = 8;
+                               if(VidCellHeight == 16) VidCellHeight =19;
+                          else if(VidCellHeight == 19) VidCellHeight =32;
+                          else if(VidCellHeight == 32) VidCellHeight = 8;
                           else if(VidCellHeight ==  8) VidCellHeight = 14;
                           else VidCellHeight = 16;
                           goto newmode;                    // shift-F8
                     case 0x42: // F8
                         if(shift) goto shiftF8;
                         if(VidCellHeight==16)
+                            { VidCellHeight=19;
+                            }
+                        else if(VidCellHeight==19)
+                            { VidCellHeight=32; use9bit=0;
+                              FatMode=1;
+                              VidW/=2; VidW&=~1; VidH/=2;
+                            }
+                        else if(VidCellHeight==32)
                             { VidCellHeight=8;
+                              if(FatMode) { VidW*=2; VidH*=2; FatMode=0; }
                               if(!dblh) dblh = 1;
                               if(use9bit) use9bit=0;
                             }
@@ -858,10 +882,11 @@ int main()
                         VisRender();
                         sprintf(StatusLine,
                             "%s: %ux%u with %ux%u font (%ux%u)",
-                                VidW < 50 ? "Mode chg" : "Selected text mode",
+                                VidW < 53 ? "Mode chg" : "Selected text mode",
                                 VidW,VidH,
-                                use9bit ? 9 : 8, VidCellHeight,
-                                VidW * (use9bit ? 9 : 8) * (1+dblw),
+                                (use9bit ? 9 : 8) * (FatMode?2:1),
+                                VidCellHeight,
+                                VidW * (use9bit ? 9 : 8) * (1+dblw) * (FatMode?2:1),
                                 VidH * VidCellHeight * (1+dblh));
                         if(C64palette)
                             strcpy(StatusLine, "READY");
