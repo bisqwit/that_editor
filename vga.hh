@@ -6,7 +6,7 @@ unsigned short* VidMem = (unsigned short *) MK_FP(0xB800, 0x0000);
 
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
 const unsigned char* VgaFont = 0;
-int C64palette = 0, FatMode = 0;
+int C64palette = 0, FatMode = 0, DispUcase;
 
 static const unsigned char c64font[8*(256-64)] = {
 #include "c64font.inc"
@@ -23,12 +23,12 @@ static const unsigned char p32wfont[32*256] = {
 
 void VgaGetFont()
 {
-    if(C64palette) { VgaFont = c64font-8*32; return; }
-
     unsigned char mode = 1;
     switch(VidCellHeight)
     {
-        case 8: mode = 3; break;
+        case 8:
+            if(C64palette) { VgaFont = c64font-8*32; return; }
+            mode = 3; break;
         case 14: mode = 2; break;
         case 16: mode = 6; break;
         case 19: case 20: { VgaFont = p19font; return; }
@@ -56,8 +56,8 @@ void VgaGetMode()
     _asm { mov ax, 0x1003; xor bx,bx; int 0x10 } // Disable blink-bit
     VgaGetFont();
 #endif
-    if(C64palette) { VidW -= 4; VidH -= 5; }
     if(FatMode) VidW /= 2;
+    if(C64palette) { VidW -= 4; VidH -= 5; }
 }
 
 void VgaSetMode(unsigned modeno)
@@ -269,13 +269,13 @@ void VgaSetCustomMode(
     *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
     *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
 
-    if(C64palette)
-    {
-        memset(VidMem, 0x99, width*height*2);
-        width -= 4; height -= 5;
-    }
     if(FatMode)
         width /= 2;
+    if(C64palette)
+    {
+        memset(VidMem, 0x99, width*height*(FatMode?4:2));
+        width -= 4; height -= 5;
+    }
 
     VidW = width;
     VidH = height;
@@ -287,11 +287,14 @@ inline unsigned short* GetVidMem(unsigned x, unsigned y)
 {
     if(C64palette)
     {
-        return VidMem + (x+2) + (y+2)*(VidW+4);
+        register unsigned offs = (x + 2) + (y + 2) * (VidW + 4);
+        if(FatMode) offs <<= 1;
+        return VidMem + offs;
     }
-    if(FatMode)
+    else
     {
-        return VidMem + (x + y*VidW)*2;
+        register unsigned offs = x + y * VidW;
+        if(FatMode) offs <<= 1;
+        return VidMem + offs;
     }
-    return VidMem + x + y*VidW;
 }

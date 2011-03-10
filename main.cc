@@ -307,7 +307,7 @@ void VisRender()
                          | ((attr >> 4u) & 0xF00u)
                          | ((attr << 4u) & 0xF000u);
                 }
-                if(C64palette && islower(attr & 0xFF))
+                if(DispUcase && islower(attr & 0xFF))
                     attr &= 0xFFDFu;
 
                 do {
@@ -665,7 +665,7 @@ int SelectFont()
             sprintf(Buf1, "%ux%u", o.px, o.py);
             {for(unsigned m=0; m<5; ++m)
                 o.wid[m] = sprintf(Bufs[m], "%c%ux%u",
-                    marker_empty, o.w[m], o.h[m]);}
+                    marker_empty, o.w[m], o.h[m])-1; }
             {char*s = Buf+sprintf(Buf,"%5s:", Buf1);
             for(unsigned m=0; m<5; ++m)
                 s += sprintf(s,"%*s", -maxwidth[m], Bufs[m]);}
@@ -706,18 +706,30 @@ int SelectFont()
               sel_y = -1; }
         else if(c == 13 || c == 10)
             break;
+        else if(c == 'A'-64) goto hom;
+        else if(c == 'E'-64) goto end;
+        else if(c == 'U'-64) goto pgup;
+        else if(c == 'V'-64) goto pgdn;
+        else if(c == '-')
+            { if(sel_y) sel_y=0; else sel_x=0; }
+        else if(c == ' ' || c == '+')
+            { if(sel_y < noptions-1) sel_y=noptions-1; else sel_x=4; }
         else if(c == 0)
             switch(getch())
             {
-                case 'H':
+                case 'H': up:
                     if(sel_y < 0) sel_y = noptions;
                     --sel_y;
                     break;
-                case 'P':
+                case 'P': dn:
                     if(++sel_y >= noptions) sel_y = -1;
                     break;
-                case 'K': sel_x = (sel_x+4) % 5; break;
-                case 'M': sel_x = (sel_x+1) % 5; break;
+                case 'K': if(sel_x>0) --sel_x; else { sel_x=4; goto up; } break;
+                case 'M': if(sel_x<4) ++sel_x; else { sel_x=0; goto dn; } break;
+                case 0x47: hom: if(sel_x > 0) sel_x=0; else sel_y=0; break;
+                case 0x4F: end: if(sel_x < 4) sel_x=4; else sel_y=noptions-1; break;
+                case 0x49: pgup: sel_y = 0; break;
+                case 0x51: pgdn: sel_y = noptions-1; break;
                 case 0x42: goto gotesc; // F8
                 default: goto rewait;
             }
@@ -1012,18 +1024,13 @@ int main()
                                dblw = !dblw; goto newmode; // shift-F6
                     case 0x41: dblh = !dblh; goto newmode; // F7
                     case 0x5A: dblh = !dblh; goto newmode; // shift-F7
-                    case 0x5B: shiftF8:
-                               if(VidCellHeight == 16) VidCellHeight =19;
-                          else if(VidCellHeight == 19) VidCellHeight =32;
-                          else if(VidCellHeight == 32) VidCellHeight = 8;
-                          else if(VidCellHeight ==  8) VidCellHeight = 14;
-                          else VidCellHeight = 16;
-                          goto newmode;                    // shift-F8
+                    case 0x5B: // shift-F8
                     case 0x42: // F8
-                        if(shift) goto shiftF8;
                         if(SelectFont())
                         {
                         newmode:
+                            if(VidW > 240) VidW = 240;
+                            if(VidH > 127) VidH = 127;
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                              use9bit, dblw, dblh);
                             sprintf(StatusLine,
@@ -1038,11 +1045,26 @@ int main()
                         VisSetCursor();
                         VisRender();
                         if(C64palette)
-                            strcpy(StatusLine, "READY");
+                        {
+                            char res[8];
+                            sprintf(res, "%ux%u", VidW,VidH);
+                            sprintf(StatusLine, "READY%*s", VidW-5, res);
+                        }
                         break;
                     case 0x43: // F9
                         C64palette = !C64palette;
+                        DispUcase = C64palette;
                         goto newmode;
+                    case 0x44: // F10
+                        DispUcase = !DispUcase;
+                        if(C64palette)
+                        {
+                            char res[8];
+                            sprintf(res, "%ux%u", VidW,VidH);
+                            sprintf(StatusLine, "READY%*s", VidW-5, res);
+                        }
+                        VisRender();
+                        break;
                 }
                 break;
             }
