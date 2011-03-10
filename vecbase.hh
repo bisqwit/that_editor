@@ -15,6 +15,12 @@ public:
     typedef const T & const_reference;
     typedef size_t size_type;
 
+#ifdef UsePlacementNew
+    #define Ttype const T&
+#else
+    #define Ttype T
+#endif
+
 public:
     VecType() : data(0),len(0),cap(0) { }
     ~VecType() { clear(); if(cap) deallocate(data,cap); }
@@ -31,7 +37,7 @@ public:
     {
         resize(length);
     }
-    VecType(size_type length, const T& value) : data(0),len(0),cap(0)
+    VecType(size_type length, Ttype value) : data(0),len(0),cap(0)
     {
         resize(length, value);
     }
@@ -119,7 +125,7 @@ public:
     const_reverse_iterator rend()   const { return const_reverse_iterator( begin() ); }
     */
 
-    void push_back(const T& value)
+    void push_back(Ttype value)
     {
         //insert(end(), value);
         if(len >= cap) reserve(cap ? cap*2 : default_size());
@@ -130,7 +136,7 @@ public:
       #endif
     }
 
-    iterator insert(iterator pos, const T& value)
+    iterator insert(iterator pos, Ttype value)
     {
         size_type ins_pos = pos - begin();
         if(len < cap)
@@ -282,7 +288,7 @@ public:
         }
     }
 
-    void resize(size_type newlen, const T& value)
+    void resize(size_type newlen, Ttype value)
     {
         if(newlen < len)
         {
@@ -347,7 +353,7 @@ private:
       #endif
         }
     }
-    static void construct(T * target, size_type count, const T& param)
+    static void construct(T * target, size_type count, Ttype param)
     {
         for(size_type a=0; a<count; ++a)
       #ifdef UsePlacementNew
@@ -453,4 +459,6 @@ private:
 private:
     T * data;
     size_type len, cap;
+
+#undef Ttype
 };

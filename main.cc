@@ -61,6 +61,8 @@ void FileLoad(char* fn)
                 size_t nextstop = editline.size() + TabSize;
                 nextstop -= nextstop % TabSize;
                 editline.resize(nextstop, UnknownColor | 0x20);
+                /*while(editline.size() < nextstop)
+                    editline.push_back( UnknownColor | 0x20 );*/
             }
             else
                 editline.push_back( UnknownColor | Buf[a] );
@@ -183,11 +185,9 @@ void VisSoftCursor(int mode)
             *cursor_location = evacuation;
     }
 }
-void VisSetCursor()
+void VisPutCursorAt(unsigned cx,unsigned cy)
 {
 #ifdef __BORLANDC__
-    unsigned cx = WinX > CurX ? 0 : CurX-WinX;       if(cx >= VidW) cx = VidW-1;
-    unsigned cy = WinY > CurY ? 1 : CurY-WinY; ++cy; if(cy >= VidH) cy = VidH-1;
     if(FatMode) cx *= 2;
     unsigned char cux = cx, cuy = cy;
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
@@ -197,6 +197,12 @@ void VisSetCursor()
     _asm { mov ah, 1; mov cx, size; int 0x10 }
     CursorCounter=0;
 #endif
+}
+void VisSetCursor()
+{
+    unsigned cx = WinX > CurX ? 0 : CurX-WinX;       if(cx >= VidW) cx = VidW-1;
+    unsigned cy = WinY > CurY ? 1 : CurY-WinY; ++cy; if(cy >= VidH) cy = VidH-1;
+    VisPutCursorAt(cx,cy);
 }
 void VisRenderStatus()
 {
@@ -332,58 +338,68 @@ enum
 
 JSF::ApplyState SyntaxCheckingState;
 ApplyEngine     SyntaxCheckingApplier;
-void WaitInput()
+void WaitInput(int may_redraw = 1)
 {
-    if(cx != CurX || cy != CurY) { cx=CurX; cy=CurY; VisSoftCursor(-1); VisSetCursor(); }
-    if(StatusLine[0] && CurY >= WinY+VidH-2) WinY += 2;
+    if(may_redraw)
+    {
+        if(cx != CurX || cy != CurY) { cx=CurX; cy=CurY; VisSoftCursor(-1); VisSetCursor(); }
+        if(StatusLine[0] && CurY >= WinY+VidH-2) WinY += 2;
+    }
+
     if(!kbhit())
     {
         while(CurX < WinX) WinX -= 8;
         while(CurX >= WinX + VidW) WinX += 8;
-        if(wx != WinX || wy != WinY)
+        if(may_redraw)
         {
-            VisSoftCursor(-1);
-            VisSetCursor();
+            if(wx != WinX || wy != WinY)
+            {
+                VisSoftCursor(-1);
+                VisSetCursor();
+            }
         }
         do {
-            if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
+            if(may_redraw)
             {
-                int horrible_sight =
-                    (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
-                    (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
-                /* If the sight on the very screen currently
-                 * is "horrible", do, as a quick fix, a scan
-                 * of the current screen to at least make it
-                 * look different.
-                 */
-
-                if(SyntaxCheckingNeeded != SyntaxChecking_Interrupted
-                || horrible_sight)
+                if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
                 {
-                    unsigned line = 0;
+                    int horrible_sight =
+                        (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
+                        (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
+                    /* If the sight on the very screen currently
+                     * is "horrible", do, as a quick fix, a scan
+                     * of the current screen to at least make it
+                     * look different.
+                     */
 
-                    if( horrible_sight)
-                        line = WinY;
-                    else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
-                        line = WinY>40 ? WinY-40 : 0;
+                    if(SyntaxCheckingNeeded != SyntaxChecking_Interrupted
+                    || horrible_sight)
+                    {
+                        unsigned line = 0;
 
-                    Syntax.ApplyInit(SyntaxCheckingState);
-                    SyntaxCheckingApplier.Reset(line);
+                        if( horrible_sight)
+                            line = WinY;
+                        else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
+                            line = WinY>40 ? WinY-40 : 0;
+
+                        Syntax.ApplyInit(SyntaxCheckingState);
+                        SyntaxCheckingApplier.Reset(line);
+                    }
+                    Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
+
+                    SyntaxCheckingNeeded =
+                        !SyntaxCheckingApplier.finished
+                        ? SyntaxChecking_Interrupted
+                        : (SyntaxCheckingApplier.begin_line == 0)
+                            ? SyntaxChecking_IsPerfect
+                            : SyntaxChecking_DoingFull;
+
+                    wx=WinX; wy=WinY;
+                    VisRender();
                 }
-                Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
-
-                SyntaxCheckingNeeded =
-                    !SyntaxCheckingApplier.finished
-                    ? SyntaxChecking_Interrupted
-                    : (SyntaxCheckingApplier.begin_line == 0)
-                        ? SyntaxChecking_IsPerfect
-                        : SyntaxChecking_DoingFull;
-
-                wx=WinX; wy=WinY;
-                VisRender();
+                if(wx != WinX || wy != WinY)
+                    { wx=WinX; wy=WinY; VisRender(); }
             }
-            if(wx != WinX || wy != WinY)
-                { wx=WinX; wy=WinY; VisRender(); }
             VisRenderStatus();
             VisSoftCursor(0);
         #ifdef __BORLANDC__
@@ -565,6 +581,159 @@ void FindPair()
         }
 }
 
+int use9bit, dblw, dblh;
+
+int SelectFont()
+{
+    struct opt
+    {
+        unsigned char px, py;
+        unsigned w[5], h[5], cx[5],cy[5],wid[5];
+    };
+    static opt options[] =
+    {
+        { 8, 8 }, { 9,  8},
+        { 8,14 },
+        { 8,16 }, { 9, 16},
+        { 8,19 }, { 9, 19},
+        { 8,32 }, { 9, 32},
+        {16,32 }
+    };
+    unsigned curw = VidW * (/*use9bit ? 9 :*/ 8) * (FatMode?2:1);// * (1+dblw);
+    unsigned curh = VidH * VidCellHeight                        ;// * (1+dblh);
+
+    const unsigned noptions = sizeof(options) / sizeof(*options);
+    unsigned char wdblset[5] = { dblw, dblw, !dblw, dblw, !dblw };
+    unsigned char hdblset[5] = { dblh, dblh, dblh, !dblh, !dblh };
+    signed int maxwidth[5] = { 0,0,0,0,0 };
+    for(unsigned n=0; n<noptions; ++n)
+    {
+        opt& o = options[n];
+        o.w[0] = VidW;
+        o.h[0] = VidH;
+        {for(unsigned m=1; m<5; ++m)
+        {
+            unsigned sx = curw, sy = curh;
+            if(dblw && !wdblset[m]) sx *= 2;
+            if(dblh && !hdblset[m]) sy *= 2;
+            if(!dblw && wdblset[m]) sx /= 2;
+            if(!dblh && hdblset[m]) sy /= 2;
+            o.w[m] = sx / (o.px&24);
+            o.h[m] = sy / o.py;
+            o.w[m] &= ~1;
+        }}
+        for(unsigned m=0; m<5; ++m)
+        {
+            int wid = 6; // ".40x25" = 6 chars
+            if(o.w[m] >= 100) wid += 1;
+            if(o.h[m] >= 100) wid += 1;
+            if(wid > maxwidth[m]) maxwidth[m] = wid;
+        }
+    }
+    unsigned cancelx = 28, cancely = VidH-1;
+
+    /* Resolution change options:
+     *   Keep current
+     *   Preserve pixel count
+     *   Flip hdouble & preserve pixel count
+     *   Flip vdouble & preserve pixel count
+     *   Flip both    & preserve pixel count
+     *
+     * 16x32 40x25 40x25 40x25 80x25 80x25 80x25
+     */
+
+    int sel_x = 0, sel_y = -1;
+    {for(unsigned y=0; y<noptions; ++y)
+        if(options[y].px == (use9bit?9:8)*(FatMode?2:1)
+        && options[y].py == VidCellHeight)
+            { sel_y = y; break; }}
+    for(;;)
+    {
+        VisSoftCursor(-1);
+        sprintf(StatusLine, "Please select new font size [Cancel]");
+        VisRenderStatus();
+        StatusLine[0] = 0;
+
+        char marker_empty  = '.';
+        {for(unsigned y=0; y<noptions; ++y)
+        {
+            unsigned yy = VidH-noptions+y-1;
+            unsigned short* p = GetVidMem(0,yy);
+            opt& o = options[y];
+
+            char Buf[80], Buf1[16], Bufs[5][16];
+            sprintf(Buf1, "%ux%u", o.px, o.py);
+            {for(unsigned m=0; m<5; ++m)
+                o.wid[m] = sprintf(Bufs[m], "%c%ux%u",
+                    marker_empty, o.w[m], o.h[m]);}
+            {char*s = Buf+sprintf(Buf,"%5s:", Buf1);
+            for(unsigned m=0; m<5; ++m)
+                s += sprintf(s,"%*s", -maxwidth[m], Bufs[m]);}
+            {for(unsigned q=0,m=0,a=0; a<VidW; ++a)
+                { unsigned short c = Buf[q];
+                  if(c == marker_empty)
+                  {
+                      c = ' ';
+                      o.cy[m]   = yy;
+                      o.cx[m++] = a+1;
+                  }
+                  if(c) ++q; else c = ' ';
+                  c |= 0x7000;
+                  if(FatMode) { p[2*a]=c; p[2*a+1]=c|0x80; } else p[a] = c;
+        }   }   }}
+
+
+        unsigned x=cancelx, xw=8, y=cancely;
+        if(sel_y >= 0)
+            { x  = options[sel_y].cx[sel_x];
+              y  = options[sel_y].cy[sel_x];
+              xw = options[sel_y].wid[sel_x];
+            }
+        VisPutCursorAt(x-1,y);
+        if(FatMode) xw *= 2;
+        unsigned short* p = GetVidMem(x,y);
+        for(unsigned m=0; m<xw; ++m)
+        {
+            unsigned short c = p[m];
+            p[m] = (c&0xFF) | ((c>>4)&0xF00) | ((c&0xF00)<<4);
+        }
+    rewait:
+        WaitInput(0);
+        unsigned c = getch();
+        if(c == 27 || c == 3)
+            { gotesc:
+              if(sel_y == -1) break;
+              sel_y = -1; }
+        else if(c == 13 || c == 10)
+            break;
+        else if(c == 0)
+            switch(getch())
+            {
+                case 'H':
+                    if(sel_y < 0) sel_y = noptions;
+                    --sel_y;
+                    break;
+                case 'P':
+                    if(++sel_y >= noptions) sel_y = -1;
+                    break;
+                case 'K': sel_x = (sel_x+4) % 5; break;
+                case 'M': sel_x = (sel_x+1) % 5; break;
+                case 0x42: goto gotesc; // F8
+                default: goto rewait;
+            }
+        else goto rewait;
+    }
+    if(sel_y == -1) return 0;
+    dblw = wdblset[sel_x];
+    dblh = hdblset[sel_x];
+    VidCellHeight = options[sel_y].py;
+    VidW          = options[sel_y].w[sel_x];
+    VidH          = options[sel_y].h[sel_x];
+    use9bit = (options[sel_y].px == 9) || (options[sel_y].px == 18);
+    FatMode = options[sel_y].px >= 16;
+    return 1;
+}
+
 int main()
 {
 #ifdef __BORLANDC__
@@ -577,9 +746,9 @@ int main()
     VgaGetMode();
     VisSetCursor();
 
-    outportb(0x3C4, 1); int use9bit = !(inportb(0x3C5) & 1);
-    outportb(0x3C4, 1); int dblw    = (inportb(0x3C5) >> 3) & 1;
-    outportb(0x3D4, 9); int dblh    = inportb(0x3D5) >> 7;
+    outportb(0x3C4, 1); use9bit = !(inportb(0x3C5) & 1);
+    outportb(0x3C4, 1); dblw    = (inportb(0x3C5) >> 3) & 1;
+    outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
 
     #define CTRL(c) ((c) & 0x1F)
     for(;;)
@@ -852,42 +1021,22 @@ int main()
                           goto newmode;                    // shift-F8
                     case 0x42: // F8
                         if(shift) goto shiftF8;
-                        if(VidCellHeight==16)
-                            { VidCellHeight=19;
-                            }
-                        else if(VidCellHeight==19)
-                            { VidCellHeight=32; use9bit=0;
-                              FatMode=1;
-                              VidW/=2; VidW&=~1; VidH/=2;
-                            }
-                        else if(VidCellHeight==32)
-                            { VidCellHeight=8;
-                              if(FatMode) { VidW*=2; VidH*=2; FatMode=0; }
-                              if(!dblh) dblh = 1;
-                              if(use9bit) use9bit=0;
-                            }
-                        else if(VidCellHeight==8)
-                            { VidCellHeight=14;
-                              if(dblh) { dblh = 0; /*VidH = VidH*16/14.0+0.5;*/ }
-                            }
-                        else if(VidCellHeight==14)
-                            { VidCellHeight=16;
-                              if(!use9bit) use9bit=1;
-                              /*if(!dblh) { VidH = VidH*14/16.0+0.5; }*/
-                            }
-                    newmode:
-                        VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                                         use9bit, dblw, dblh);
+                        if(SelectFont())
+                        {
+                        newmode:
+                            VgaSetCustomMode(VidW,VidH, VidCellHeight,
+                                             use9bit, dblw, dblh);
+                            sprintf(StatusLine,
+                                "%s: %ux%u with %ux%u font (%ux%u)",
+                                    VidW < 53 ? "Mode chg" : "Selected text mode",
+                                    VidW,VidH,
+                                    (use9bit ? 9 : 8) * (FatMode?2:1),
+                                    VidCellHeight,
+                                    VidW * (use9bit ? 9 : 8) * (1+dblw) * (FatMode?2:1),
+                                    VidH * VidCellHeight * (1+dblh));
+                        }
                         VisSetCursor();
                         VisRender();
-                        sprintf(StatusLine,
-                            "%s: %ux%u with %ux%u font (%ux%u)",
-                                VidW < 53 ? "Mode chg" : "Selected text mode",
-                                VidW,VidH,
-                                (use9bit ? 9 : 8) * (FatMode?2:1),
-                                VidCellHeight,
-                                VidW * (use9bit ? 9 : 8) * (1+dblw) * (FatMode?2:1),
-                                VidH * VidCellHeight * (1+dblh));
                         if(C64palette)
                             strcpy(StatusLine, "READY");
                         break;
