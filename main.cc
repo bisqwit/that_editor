@@ -334,7 +334,7 @@ enum
     SyntaxChecking_DidEdits = 1,
     SyntaxChecking_Interrupted = 2,
     SyntaxChecking_DoingFull = 3
-} SyntaxCheckingNeeded = 3;
+} SyntaxCheckingNeeded = SyntaxChecking_DoingFull;
 
 JSF::ApplyState SyntaxCheckingState;
 ApplyEngine     SyntaxCheckingApplier;
@@ -590,7 +590,7 @@ int SelectFont()
         unsigned char px, py;
         unsigned w[5], h[5], cx[5],cy[5],wid[5];
     };
-    static opt options[] =
+    opt options[] =
     {
         { 8, 8 }, { 9,  8},
         { 8,14 },
@@ -599,6 +599,14 @@ int SelectFont()
         { 8,32 }, { 9, 32},
         {16,32 }
     };
+    if(VidCellHeight == 8 || VidCellHeight == 14)
+    {
+        // Put 16-pixel modes to the beginning of list for quick swapping
+        opt tmp;
+        tmp = options[0]; options[0] = options[4]; options[4] = tmp;
+        tmp = options[1]; options[1] = options[3]; options[3] = tmp;
+    }
+
     unsigned curw = VidW * (/*use9bit ? 9 :*/ 8) * (FatMode?2:1);// * (1+dblw);
     unsigned curh = VidH * VidCellHeight                        ;// * (1+dblh);
 
@@ -618,8 +626,14 @@ int SelectFont()
             if(dblh && !hdblset[m]) sy *= 2;
             if(!dblw && wdblset[m]) sx /= 2;
             if(!dblh && hdblset[m]) sy /= 2;
-            o.w[m] = sx / (o.px&24);
+            o.w[m] = sx / (o.px & ~7u);
             o.h[m] = sy / o.py;
+            if(VidH != o.h[m])
+                { if(o.h[m] == 24) o.h[m] = 25;
+                  if(o.h[m] == 42) o.h[m] = 43;
+                  if(o.h[m] == 48) o.h[m] = 50;
+                  if(o.h[m] == 28) o.h[m] = 30;
+                }
             o.w[m] &= ~1;
         }}
         for(unsigned m=0; m<5; ++m)
