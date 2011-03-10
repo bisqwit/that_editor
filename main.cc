@@ -1054,6 +1054,7 @@ int main()
                     case 0x43: // F9
                         C64palette = !C64palette;
                         DispUcase = C64palette;
+                        if(C64palette) use9bit = 0;
                         goto newmode;
                     case 0x44: // F10
                         DispUcase = !DispUcase;
@@ -1149,6 +1150,13 @@ int main()
     }
 exit:;
     CurX = 0; CurY = WinY + VidH; InsertMode = 1;
+    if(FatMode || C64palette)
+    {
+        FatMode=0;
+        C64palette=0;
+        VgaSetCustomMode(VidW,VidH, VidCellHeight,
+                         use9bit, dblw, dblh);
+    }
     VisSetCursor();
 #ifdef __BORLANDC__
     DeInstallMario();
