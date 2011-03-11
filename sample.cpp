@@ -2,13 +2,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-#include <dos.h> // for outportb, inportb
-/*
-	db 'Copyright (C) 2011-03-03 Joel Yliluoma, http://iki.fi/bisqwit/',13,10
-	db 'JAINPUT','–Ä “Çÿù«ó“Ç÷Ü“Ç¢£',0xFF
-	db 32
-	db '∆ñèê§•∏π˚Ã-“Ç¬í˜¯äåÃ- –Ä òôÆ: ', EnableToggleKey1 & 255
-*/
+#include <dos.h>// for outportb,inportb
 
 // Raytracing is mathematics-heavy. Declare mathematical datatypes
 inline double dmin(double a,double b) { return a<b ? a : b; }
@@ -100,10 +94,14 @@ struct Matrix
 
 /*****************/
 // Declarations for scene description
-// Walls are planes. Planes have a normal vector and a distance.
-// Declare six planes, each looks towards origo and is 30 units away.
-const struct Plane { XYZ normal; double offset; } Planes[] =
+// Walls are planes.Planes have
+// a normal vector and a distance.
+const struct Plane
+{ XYZ normal; double offset; }
+Planes[] =
 {
+// Declare six planes, each looks
+// towards origo and is 30 units away.
     { {{0,0,-1}}, -30 },
     { {{0, 1,0}}, -30 },
     { {{0,-1,0}}, -30 },
@@ -111,9 +109,11 @@ const struct Plane { XYZ normal; double offset; } Planes[] =
     { {{0,0, 1}}, -30 },
     { {{-1,0,0}}, -30 }
 };
-// Declare a few spheres.
-const struct Sphere { XYZ center; double radius; } Spheres[] =
+const struct Sphere
+{ XYZ center; double radius; }
+Spheres[] =
 {
+// Declare a few spheres.
     { {{0,0,0}}, 7 },
     { {{19.4, -19.4, 0}}, 2.1 },
     { {{-19.4, 19.4, 0}}, 2.1 },
@@ -123,8 +123,11 @@ const struct Sphere { XYZ center; double radius; } Spheres[] =
     { {{15,-30,30}}, 6},
     { {{30,15,-30}}, 6}
 };
-// Declare lightsources. Each lightsource has location and RGB color.
-const struct LightSource { XYZ where, colour; } Lights[] =
+// Declare lightsources. A lightsource
+// has a location and a RGB color.
+const struct LightSource
+{ XYZ where, colour; }
+Lights[] =
 {
     { {{-28,-14,  3}}, {{.4, .51, .9}} },
     { {{-29,-29,-29}}, {{.95, .1, .1}} },
@@ -132,43 +135,72 @@ const struct LightSource { XYZ where, colour; } Lights[] =
     { {{ 29, 29, 29}}, {{1,1,1}} },
     { {{ 28,  0, 29}}, {{.5, .6,  .1}} }
 };
-const unsigned NumPlanes = sizeof(Planes) / sizeof(*Planes);
-const unsigned NumSpheres = sizeof(Spheres) / sizeof(*Spheres);
-const unsigned NumLights = sizeof(Lights) / sizeof(*Lights);
-const unsigned MAXTRACE  = 6; // Maximum trace level
-
-/*******************/
-// Declarations for 8x8 Knoll-Yliluoma dithering
-const unsigned CandCount = 64;
-const double Gamma = 2.2, Ungamma = 1.0 / Gamma;
-unsigned Dither8x8[8][8];
-XYZ Pal[16], PalG[16];
-double luma[16];
-void InitDither()
-{
-    // We will use the default 16-color EGA/VGA palette.
-    outportb(0x3C7, 0); // Read palette from VGA.
-    for(unsigned i=0; i<16; ++i)
-    {
-        if(i==8) outportb(0x3C7, 64-8);
-        for(unsigned n=0; n<3; ++n) Pal[i].d[n] = inportb(0x3C9);
-        Pal[i] *= 1/63.0;
-        PalG[i] = Pal[i].Pow(Gamma);
-        luma[i] = Pal[i].Luma();
-    }
-    // Create bayer dithering matrix, adjusted for candidate count
-    for(unsigned y=0; y<8; ++y)
-        for(unsigned x=0; x<8; ++x)
-        {
-            unsigned i = x ^ y, j;
-            j = (x & 4)/4u + (x & 2)*2u + (x & 1)*16u;
-            i = (i & 4)/2u + (i & 2)*4u + (i & 1)*32u;
-            Dither8x8[y][x] = (j+i)*CandCount/64u;
-        }
-}
+#define NElems(x) sizeof(x)/sizeof(*x)
+const unsigned
+    NumPlanes = NElems(Planes),
+    NumSpheres = NElems(Spheres),
+    NumLights = NElems(Lights),
+    MAXTRACE = 6; // Maximum trace level
 
 /*****************/
 // Actual raytracing!
+
+// Determine whether an object is
+// in direct eyesight on the given
+// line, and determine exactly which
+// point of the object is seen.
+int RayFindObstacle
+    (const XYZ& eye, const XYZ& dir,
+     double& HitDist, int& HitIndex,
+     XYZ& HitLoc, XYZ& HitNormal)
+{
+    // Try intersecting the ray with
+    // each object and see which one
+    // produces the closest hit.
+    int HitType = -1;
+   {for(unsigned i=0; i<NumSpheres; ++i)
+    {
+        XYZ V (eye - Spheres[i].center);
+        double r = Spheres[i].radius,
+            DV = dir.Dot(V),
+            D2 = dir.Squared(),
+            SQ = DV*DV
+               - D2*(V.Squared() - r*r);
+        // Does the ray coincide
+        // with the sphere?
+        if(SQ < 1e-6) continue;
+        // Determine where exactly
+        double SQt = sqrt(SQ),
+            Dist = dmin(-DV-SQt,
+                        -DV+SQt) / D2;
+        if(Dist<1e-6 || Dist>=HitDist)
+            continue;
+        HitType = 1; HitIndex = i;
+        HitDist = Dist;
+        HitLoc = eye + (dir * HitDist);
+        HitNormal =
+            (HitLoc - Spheres[i].center)
+                * (1/r);
+    }}
+   {for(unsigned i=0; i<NumPlanes; ++i)
+    {
+        double DV =
+            -Planes[i].normal.Dot(dir);
+        if(DV > -1e-6) continue;
+        double D2 =
+            Planes[i].normal.Dot(eye),
+            Dist = (D2+Planes[i].offset)
+                  / DV;
+        if(Dist<1e-6 || Dist>=HitDist)
+            continue;
+        HitType = 0; HitIndex = i;
+        HitDist = Dist;
+        HitLoc = eye + (dir * HitDist);
+        HitNormal = -Planes[i].normal;
+    }}
+    return HitType;
+}
+
 const unsigned NumArealightVectors = 20;
 XYZ ArealightVectors[NumArealightVectors];
 void InitArealightVectors()
@@ -176,44 +208,6 @@ void InitArealightVectors()
     for(unsigned i=0; i<NumArealightVectors; ++i)
         for(unsigned n=0; n<3; ++n)
             ArealightVectors[i].d[n] = 2.0 * (rand() / double(RAND_MAX) - 0.5);
-}
-
-int RayFindObstacle(const XYZ& eye, const XYZ& dir,
-                    double& HitDist, int& HitIndex,
-                    XYZ& HitLoc, XYZ& HitNormal)
-{
-    // Try intersecting the ray with each object and see which produces the closest hit.
-    int HitType = -1;
-   {for(unsigned i=0; i<NumSpheres; ++i)
-    {
-        XYZ V ( eye - Spheres[i].center );
-        double DV = dir.Dot(V), D2 = dir.Squared();
-        double r = Spheres[i].radius;
-        double SQ = DV*DV - D2 * (V.Squared() - r*r);
-        if(SQ < 1e-6) continue; // inside the sphere?
-        double SQt = sqrt(SQ);
-        double Dist = dmin(-DV-SQt, -DV+SQt) / D2;
-        if(Dist < 1e-6 || Dist >= HitDist) continue;
-        HitType = 1;
-        HitIndex = i;
-        HitDist = Dist;
-        HitLoc = eye + (dir * HitDist);
-        HitNormal = (HitLoc - Spheres[i].center) * (1/r);
-    }}
-   {for(unsigned i=0; i<NumPlanes; ++i)
-    {
-        double DV = Planes[i].normal.Dot(dir);
-        if(DV < 1e-6) continue; // wrong side?
-        double D2 = Planes[i].normal.Dot(eye);
-        double Dist = -(D2 + Planes[i].offset) / DV;
-        if(Dist < 1e-6 || Dist >= HitDist) continue;
-        HitType = 0;
-        HitIndex = i;
-        HitDist = Dist;
-        HitLoc = eye + (dir * HitDist);
-        HitNormal = -Planes[i].normal;
-    }}
-    return HitType;
 }
 
 // Shoot a camera-ray from specified location to specified direction,
@@ -279,6 +273,38 @@ void RayTrace(XYZ& resultcolor, const XYZ& eye, const XYZ& dir, int k)
         }
         resultcolor = (DiffuseLight + SpecularLight) * Pigment;
 }   }
+
+/*******************/
+// Declarations for 8x8 Knoll-Yliluoma dithering
+const unsigned CandCount = 64;
+const double Gamma = 2.2, Ungamma = 1.0 / Gamma;
+unsigned Dither8x8[8][8];
+XYZ Pal[16], PalG[16];
+double luma[16];
+void InitDither()
+{
+    // We will use the default
+    // 16-color EGA/VGA palette.
+    outportb(0x3C7, 0); // Read palette from VGA.
+    for(unsigned i=0; i<16; ++i)
+    {
+        if(i==8) outportb(0x3C7, 64-8);
+        for(unsigned n=0; n<3; ++n)
+            Pal[i].d[n]=inportb(0x3C9);
+        Pal[i] *= 1/63.0;
+        PalG[i] = Pal[i].Pow(Gamma);
+        luma[i] = Pal[i].Luma();
+    }
+    // Create bayer dithering matrix, adjusted for candidate count
+    for(unsigned y=0; y<8; ++y)
+        for(unsigned x=0; x<8; ++x)
+        {
+            unsigned i = x ^ y, j;
+            j = (x & 4)/4u + (x & 2)*2u + (x & 1)*16u;
+            i = (i & 4)/2u + (i & 2)*4u + (i & 1)*32u;
+            Dither8x8[y][x] = (j+i)*CandCount/64u;
+        }
+}
 
 /*****************/
 // Main program
