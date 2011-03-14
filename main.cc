@@ -8,8 +8,9 @@
 #else
 # define cdecl
 static unsigned      kbhitptr   = 0;
-static unsigned char kbhitbuf[] = 
+static unsigned char kbhitbuf[] =
 {
+    // simulated input for testing with valgrind
     'K'-64, 'V'-64, 8
 };
 # define kbhit() (kbhitptr < sizeof(kbhitbuf))
@@ -1445,9 +1446,10 @@ int main(int argc, char**argv)
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                              use9bit, dblw, dblh);
                             sprintf(StatusLine,
-                                "%s: %ux%u with %ux%u font (%ux%u)",
+                                "%s: %ux%u %s %ux%u font (%ux%u)",
                                     VidW < 53 ? "Mode chg" : "Selected text mode",
                                     VidW,VidH,
+                                    VidW < 44 ? "w/" : "with",
                                     (use9bit ? 9 : 8) * (FatMode?2:1),
                                     VidCellHeight,
                                     VidW * (use9bit ? 9 : 8) * (1+dblw) * (FatMode?2:1),
