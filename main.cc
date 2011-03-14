@@ -472,7 +472,56 @@ void PerformEdit(
     {
         unsigned insert_length = insert_chars.size();
         event.n_delete = insert_length;
-        
+
+        unsigned insert_newline_count = 0;
+        {for(unsigned p=0; p<insert_length; ++p)
+            if( (insert_chars[p] & 0xFF) == '\n')
+                ++insert_newline_count; }
+
+        if(insert_newline_count > 0)
+        {
+            WordVecType nlvec(1, '\n' | UnknownColor);
+            WordPtrVecType new_lines( insert_newline_count, nlvec );
+            // Move the trailing part from current line to the beginning of last "new" line
+            new_lines.back().assign( EditLines[y].begin() + x, EditLines[y].end() );
+            EditLines[y].erase(  EditLines[y].begin() + x, EditLines[y].end() );
+            EditLines[y].push_back( nlvec[0] );
+            EditLines.insert(
+                EditLines.begin()+y+1,
+                new_lines.begin(),
+                new_lines.end() );
+            if(BlockBeginY == y && BlockBeginX >= x) { BlockBeginY += insert_newline_count; BlockBeginX -= x;  }
+            else if(BlockBeginY > y) { BlockBeginY += insert_newline_count; }
+            if(BlockEndY == y && BlockEndX >= x) { BlockEndY += insert_newline_count; BlockEndX -= x;  }
+            else if(BlockEndY > y) { BlockEndY += insert_newline_count; }
+            if(CurY == y && CurX >= x) { CurY += insert_newline_count; CurX -= x;  }
+            else if(CurY > y) { CurY += insert_newline_count; }
+        }
+        unsigned insert_beginpos = 0;
+        while(insert_beginpos < insert_length)
+        {
+            unsigned p = insert_beginpos;
+            if( (insert_chars[p] & 0xFF) == '\n')
+                { x = 0; ++y; ++insert_beginpos; }
+            else
+            {
+                while(p < insert_length && (insert_chars[p] & 0xFF) != '\n')
+                    ++p;
+
+                WordVecType new_chars;
+                new_chars.assign(
+                    insert_chars.begin() + insert_beginpos,
+                    insert_chars.begin() + p );
+                EditLines[y].insert(EditLines[y].begin() + x,
+                                    new_chars.begin(),
+                                    new_chars.end());
+                if(BlockBeginY == y && BlockBeginX >= x) BlockBeginX += new_chars.size();
+                if(BlockEndY == y && BlockEndX >= x) BlockEndX += new_chars.size();
+                if(CurY == y && CurX >= x) CurX += new_chars.size();
+                x += new_chars.size();
+                insert_beginpos = p;
+            }
+        }
     }
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
 }
@@ -845,16 +894,20 @@ int main()
                         GetBlock(block);
                         PerformEdit(BlockBeginX,BlockBeginY, block.size(), empty);
                         // Note: ^ Assumes CurX,CurY get updated here.
+                        BlockEndX = CurX; BlockEndY = CurY;
+                        unsigned x = CurX, y = CurY;
                         PerformEdit(CurX,CurY, InsertMode?0u:block.size(), block);
+                        BlockBeginX = x; BlockBeginY = y;
                         break;
                     }
                     case 'c': case 'C': case CTRL('C'): // paste block
                     {
                         WordVecType block;
                         GetBlock(block);
-                        BlockBeginX = BlockEndX = CurX;
-                        BlockBeginY = BlockEndY = CurY;
+                        BlockEndX = CurX; BlockEndY = CurY;
+                        unsigned x = CurX, y = CurY;
                         PerformEdit(CurX,CurY, InsertMode?0u:block.size(), block);
+                        BlockBeginX = x; BlockBeginY = y;
                         break;
                     }
                     case 'y': case 'Y': case CTRL('Y'): // delete block
