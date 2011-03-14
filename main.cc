@@ -10,12 +10,7 @@
 static unsigned      kbhitptr   = 0;
 static unsigned char kbhitbuf[] = 
 {
-    0,'P', 0,'P', 0,'P',
-    'K'-64, 'B'-64,
-    0,'P', 0,'P',
-    'K'-64, 'K'-64,
-    'K'-64, 'C'-64,
-    'K'-64, 'U'-64
+    'K'-64, 'V'-64, 8
 };
 # define kbhit() (kbhitptr < sizeof(kbhitbuf))
 # define getch() kbhitbuf[kbhitptr++]
