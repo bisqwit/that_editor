@@ -1,7 +1,7 @@
 #ifdef __BORLANDC__
 unsigned short* VidMem = (unsigned short *) MK_FP(0xB800, 0x0000);
 #else
-//unsigned short VidMem[132*43];
+unsigned short VidMem[256*256];
 #endif
 
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
@@ -35,6 +35,7 @@ void VgaGetFont()
         case 32: { VgaFont = FatMode ? p32wfont : p32font; return; }
         default: mode = 1; break;
     }
+#ifdef __BORLANDC__
     _asm { push es; push bp
            mov ax, 0x1130
            mov bh, mode
@@ -45,6 +46,7 @@ void VgaGetFont()
            xchg dx,dx
            pop bp
            pop es }
+#endif
 }
 
 void VgaGetMode()
@@ -62,6 +64,7 @@ void VgaGetMode()
 
 void VgaSetMode(unsigned modeno)
 {
+#ifdef __BORLANDC__
     if(modeno < 0x100)
         _asm { mov ax, modeno; int 0x10 }
     else
@@ -93,6 +96,7 @@ void VgaSetMode(unsigned modeno)
         outportb(0x3C9, (c64pal[a] >> 10) & 0x3F);
         outportb(0x3C9, (c64pal[a] >> 2) & 0x3F);
     }
+#endif
 }
 
 void VgaSetCustomMode(
@@ -111,6 +115,7 @@ void VgaSetCustomMode(
     if(FatMode)
         width *= 2;
 
+#ifdef __BORLANDC__
     unsigned hdispend = width;
     unsigned vdispend = height*font_height;
     if(is_double) vdispend *= 2;
@@ -268,6 +273,7 @@ void VgaSetCustomMode(
     *(unsigned char*)MK_FP(0x40, 0x84) = height-1;
     *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
     *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
+#endif
 
     if(FatMode)
         width /= 2;

@@ -227,6 +227,7 @@ void MarioTranslate(
         model[basex >> 3] = (ch & 0xF000u) | chartable[numchars++];
     }
 
+#ifdef __BORLANDC__
     if(numchars > 0)
     {
         // Update VGA font:
@@ -256,9 +257,11 @@ void MarioTranslate(
             pop es
         }
     }
+#endif
     memcpy(target, model, room_wide/4);
 }
 
+#ifdef __BORLANDC__
 static unsigned rate=60U, Clock=0u, Counter=0x1234DCUL/rate;
 static void (interrupt *OldI08)();
 static void interrupt MarioI08()
@@ -274,9 +277,11 @@ static void interrupt MarioI08()
 P1: _asm { mov al, 0x20; out 0x20, al }
 P2:;
 }
+#endif
 
 void InstallMario()
 {
+#ifdef __BORLANDC__
     disable();
     (void *)OldI08 = *(void **)MK_FP(0, 8*4);
     *(void **)MK_FP(0, 8*4) = (void *)MarioI08;
@@ -284,14 +289,17 @@ void InstallMario()
            mov ax, Counter; out 0x40, al
            mov al, ah;      out 0x40, al }
     enable();
+#endif
 }
 
 void DeInstallMario()
 {
+#ifdef __BORLANDC__
     disable();
     *(void **)MK_FP(0, 8*4) = (void *)OldI08;
     _asm { mov al, 0x34;    out 0x43, al
            xor al, al;      out 0x40, al
            /*********/      out 0x40, al }
     enable();
+#endif
 }

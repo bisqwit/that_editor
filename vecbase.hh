@@ -199,9 +199,58 @@ public:
                 copy_construct(&data[ins_pos], first, count);
             else
             {
-                move_construct(&data[len], &data[len-count], count);
-                move_assign_backwards(&data[ins_pos+count], &data[ins_pos], len-ins_pos);
+                /*******
+                 *      012345678
+                 *           ^NM
+                 *      ins_pos = 5, count = 2
+                 *      len = 9, new_length = 11
+                 *      tail_length = 4 ("5678")
+                 *      tail_source_pos = 5
+                 *      tail_target_pos = 7
+                 *      num_tail_bytes_after_current_area = min(tail_length, count)
+                 */
+                unsigned new_length = len + count;
+                unsigned tail_length = len - ins_pos;
+                unsigned tail_source_pos = ins_pos;
+                unsigned tail_target_pos = ins_pos + count;
+                unsigned num_tail_bytes_after_current_area =
+                    count < tail_length ? count : tail_length;
+                unsigned num_tail_bytes_to_movecopy =
+                    tail_length - num_tail_bytes_after_current_area;
+              #ifdef Debug__UsePlacementNew
+                fprintf(stdout, "Input (%u):", count);
+                {for(unsigned a=0; a<count; ++a) fprintf(stdout, "\n\t%p", &first[a][0]);}
+                fprintf(stdout, "\n");
+                fprintf(stdout, "Before (%u + %u):", len, cap);
+                {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
+                {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
+                fprintf(stdout, "\n");
+              #endif
+                move_construct(&data[len], &data[tail_source_pos+num_tail_bytes_to_movecopy], num_tail_bytes_after_current_area);
+              #ifdef Debug__UsePlacementNew
+                fprintf(stdout, "After move_construct(%u,%u,%u):",len,tail_source_pos+num_tail_bytes_to_movecopy,num_tail_bytes_after_current_area);
+                {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
+                {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
+                fprintf(stdout, "\n");
+              #endif
+                if(num_tail_bytes_to_movecopy > 0)
+                {
+                    move_assign_backwards(&data[ins_pos+count], &data[ins_pos], num_tail_bytes_to_movecopy);
+                  #ifdef Debug__UsePlacementNew
+                    fprintf(stdout, "After move_assign_backwards(%u,%u,%u):", ins_pos+count,ins_pos,num_tail_bytes_to_movecopy);
+                    {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
+                    {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
+                    fprintf(stdout, "\n");
+                  #endif
+                }
                 copy_assign(&data[ins_pos], first, count);
+              #ifdef Debug__UsePlacementNew
+                fprintf(stdout, "After copy_assign(%u,%u):", ins_pos, count);
+                {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
+                {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
+                fprintf(stdout, "\n");
+                fflush(stdout);
+              #endif
             }
             len += count;
             return;

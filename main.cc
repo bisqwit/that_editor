@@ -7,8 +7,18 @@
 # include <conio.h>
 #else
 # define cdecl
-# define kbhit() 0
-# define getch() 0
+static unsigned      kbhitptr   = 0;
+static unsigned char kbhitbuf[] = 
+{
+    0,'P', 0,'P', 0,'P',
+    'K'-64, 'B'-64,
+    0,'P', 0,'P',
+    'K'-64, 'K'-64,
+    'K'-64, 'C'-64,
+    'K'-64, 'U'-64
+};
+# define kbhit() (kbhitptr < sizeof(kbhitbuf))
+# define getch() kbhitbuf[kbhitptr++]
 # define strnicmp strncasecmp
 #endif
 
@@ -154,8 +164,10 @@ void VisSoftCursor(int mode)
     static unsigned short* cursor_location = 0;
     static unsigned evacuation = 0;
 
-    unsigned char cux, cuy;
+    unsigned char cux=0, cuy=0;
+#ifdef __BORLANDC__
     _asm { mov ah, 3; mov bh, 0; int 0x10; mov cux, dl; mov cuy, dh; xchg cx,cx }
+#endif
     unsigned short* now_location = GetVidMem(cux,cuy); //VidMem + cux + cuy * unsigned(VidW + C64palette*4);
 
     if(mode == 1) // screen redrawn
@@ -213,7 +225,9 @@ void VisRenderStatus()
     struct tm* tm = localtime(&t);
 
     char Buf1[80], Buf2[80];
-    sprintf(Buf1, "Row %-5uCol %-5u", CurY+1,CurX+1);
+    sprintf(Buf1, "Row %-5u/%u Cap=%u Col %-5u", CurY+1,
+        EditLines.size(), EditLines.capacity(),
+        CurX+1);
     sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
     unsigned x1a = VidW*12/70, x1b = x1a + strlen(Buf1);
     unsigned x2a = VidW*55/70, x2b = x2a + strlen(Buf2);
@@ -415,11 +429,52 @@ struct UndoEvent
     unsigned n_delete;
     WordVecType insert_chars;
 };
+const unsigned   MaxUndo = 256;
+UndoEvent UndoQueue[MaxUndo];
+UndoEvent RedoQueue[MaxUndo];
+unsigned  UndoHead = 0, RedoHead = 0;
+unsigned  UndoTail = 0, RedoTail = 0;
+char      UndoAppendOk = 0;
+void AddUndo(const UndoEvent& event)
+{
+    unsigned UndoBufSize = (UndoHead + MaxUndo - UndoTail) % MaxUndo;
+    if(UndoAppendOk && UndoBufSize > 0)
+    {
+        UndoEvent& prev = UndoQueue[ (UndoHead + MaxUndo-1) % MaxUndo ];
+        /*if(event.n_delete == 0 && prev.n_delete == 0
+        && event.x == prev.x && event.y == prev.y
+          )
+        {
+            prev.insert_chars.insert(
+                prev.insert_chars.end(),
+                event.insert_chars.begin(),
+                event.insert_chars.end());
+            return;
+        }*/
+        if(event.insert_chars.empty() && prev.insert_chars.empty())
+        {
+            prev.n_delete += event.n_delete;
+            return;
+        }
+    }
+
+    if( UndoBufSize >= MaxUndo - 1) UndoTail = (UndoTail + 1) % MaxUndo;
+    UndoQueue[UndoHead] = event;
+    UndoHead = (UndoHead + 1) % MaxUndo;
+}
+void AddRedo(const UndoEvent& event)
+{
+    unsigned RedoBufSize = (RedoHead + MaxUndo - RedoTail) % MaxUndo;
+    if( RedoBufSize >= MaxUndo - 1) RedoTail = (RedoTail + 1) % MaxUndo;
+    RedoQueue[RedoHead] = event;
+    RedoHead = (RedoHead + 1) % MaxUndo;
+}
 
 void PerformEdit(
     unsigned x, unsigned y,
     unsigned n_delete,
-    const WordVecType& insert_chars)
+    const WordVecType& insert_chars,
+    char DoingUndo = 0)
 {
     unsigned eol_x = EditLines[y].size();
     if(eol_x > 0) --eol_x;
@@ -428,11 +483,24 @@ void PerformEdit(
     UndoEvent event;
     event.x = x;
     event.y = y;
+    event.n_delete = 0;
 
-    // If the deletion spans across newlines, concatenate those lines first
+    { int s = sprintf(StatusLine,"Edit%u @%u,%u: Delete %u, insert '",
+        UndoAppendOk, x,y,n_delete);
+    for(unsigned b=insert_chars.size(), a=0; a<b && s<252; ++a)
+    {
+        char c = insert_chars[a] & 0xFF;
+        if(c == '\n') { StatusLine[s++] = '\\'; StatusLine[s++] = 'n'; }
+        else StatusLine[s++] = c;
+    }
+    sprintf(StatusLine+s, "'");
+    }
+
+    // Is there something to delete?
     if(n_delete > 0)
     {
         unsigned n_lines_deleted = 0;
+        // If the deletion spans across newlines, concatenate those lines first
         while(n_delete >= EditLines[y].size() - x && y+1 < EditLines.size())
         {
             ++n_lines_deleted;
@@ -484,12 +552,16 @@ void PerformEdit(
             WordPtrVecType new_lines( insert_newline_count, nlvec );
             // Move the trailing part from current line to the beginning of last "new" line
             new_lines.back().assign( EditLines[y].begin() + x, EditLines[y].end() );
+            // Remove the trailing part from that line
             EditLines[y].erase(  EditLines[y].begin() + x, EditLines[y].end() );
+            // But keep the newline character
             EditLines[y].push_back( nlvec[0] );
+            // Insert these new lines
             EditLines.insert(
                 EditLines.begin()+y+1,
                 new_lines.begin(),
                 new_lines.end() );
+            // Update cursors
             if(BlockBeginY == y && BlockBeginX >= x) { BlockBeginY += insert_newline_count; BlockBeginX -= x;  }
             else if(BlockBeginY > y) { BlockBeginY += insert_newline_count; }
             if(BlockEndY == y && BlockEndX >= x) { BlockEndY += insert_newline_count; BlockEndX -= x;  }
@@ -524,6 +596,40 @@ void PerformEdit(
         }
     }
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
+    switch(DoingUndo)
+    {
+        case 0: // normal edit
+            RedoHead = RedoTail = 0; // reset redo
+            AddUndo(event); // add undo
+            break;
+        case 1: // undo
+            AddRedo(event);
+            break;
+        case 2: // redo
+            AddUndo(event); // add undo, but don't reset redo
+            break;
+    }
+}
+
+void TryUndo()
+{
+    unsigned UndoBufSize = (UndoHead + MaxUndo - UndoTail) % MaxUndo;
+    if(UndoBufSize > 0)
+    {
+        UndoHead = (UndoHead + MaxUndo-1) % MaxUndo;
+        UndoEvent event = UndoQueue[UndoHead]; // make copy
+        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 1);
+    }
+}
+void TryRedo()
+{
+    unsigned RedoBufSize = (RedoHead + MaxUndo - RedoTail) % MaxUndo;
+    if(RedoBufSize > 0)
+    {
+        RedoHead = (RedoHead + MaxUndo-1) % MaxUndo;
+        UndoEvent event = RedoQueue[RedoHead]; // make copy
+        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 2);
+    }
 }
 
 void BlockIndent(int offset)
@@ -821,16 +927,22 @@ int main()
     VgaGetMode();
     VisSetCursor();
 
+#ifdef __BORLANDC__
     outportb(0x3C4, 1); use9bit = !(inportb(0x3C5) & 1);
     outportb(0x3C4, 1); dblw    = (inportb(0x3C5) >> 3) & 1;
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
+#endif
 
     #define CTRL(c) ((c) & 0x1F)
     for(;;)
     {
         WaitInput();
         unsigned c = getch();
+#ifdef __BORLANDC__
         int shift = 3 & (*(char*)MK_FP(0x40,0x17));
+#else
+        int shift = 0;
+#endif
         int wasbegin = CurX==BlockBeginX && CurY==BlockBeginY;
         int wasend   = CurX==BlockEndX && CurY==BlockEndY;
         unsigned WasX = CurX, WasY = CurY;
@@ -841,6 +953,7 @@ int main()
             VisRender();
         }
         unsigned DimX = VidW, DimY = VidH-1;
+        char WasAppend = 0;
         switch(c)
         {
             case CTRL('V'): // ctrl-V
@@ -872,6 +985,12 @@ int main()
             {
                 /* TODO: Check if unsaved */
                 goto exit;
+            }
+            case 0x7F:      // ctrl+backspace
+            case CTRL('Z'):
+            {
+                TryUndo();
+                break;
             }
             case CTRL('K'):
             {
@@ -951,10 +1070,7 @@ int main()
                 break;
             }
             case CTRL('R'):
-            refresh:
-                VgaGetMode();
-                VisSetCursor();
-                VisRender();
+                TryRedo();
                 break;
             case CTRL('G'):
                 FindPair();
@@ -1076,6 +1192,7 @@ int main()
                         if(CurX > eol_x) { CurX = eol_x; break; } // just do end-key
                         WordVecType empty;
                         PerformEdit(CurX,CurY, 1u, empty);
+                        WasAppend = 1;
                         break;
                     }
                     case 0x3B: VidH -= 1; goto newmode; // F1
@@ -1133,6 +1250,12 @@ int main()
                         }
                         VisRender();
                         break;
+                    case 0x13: // alt+R
+                    refresh:
+                        VgaGetMode();
+                        VisSetCursor();
+                        VisRender();
+                        break;
                 }
                 break;
             }
@@ -1166,10 +1289,10 @@ int main()
                     }
                     PerformEdit(CurX,CurY, 1u, empty);
                 }
+                WasAppend = 1;
                 break;
             }
             case CTRL('D'):
-            case 0x7F:      // ctrl+backspace
                 goto delkey;
             case CTRL('I'):
             {
@@ -1191,15 +1314,18 @@ int main()
                 WordVecType txtbuf(nspaces + 1, 0x0720);
                 txtbuf[0] = 0x070A; // newline
                 PerformEdit(CurX,CurY, InsertMode?0u:1u, txtbuf);
+                WasAppend = 1;
                 break;
             }
             default:
             {
                 WordVecType txtbuf(1, 0x0700 | c);
                 PerformEdit(CurX,CurY, InsertMode?0u:1u, txtbuf);
+                WasAppend = 1;
                 break;
             }
         }
+        UndoAppendOk = WasAppend;
         if(dragalong)
         {
             int w=0;
