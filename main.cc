@@ -539,7 +539,8 @@ void PerformEdit(
     {
         unsigned n_lines_deleted = 0;
         // If the deletion spans across newlines, concatenate those lines first
-        while(n_delete >= EditLines[y].size() - x && y+1 < EditLines.size())
+        while(n_delete >= EditLines[y].size() - x
+           && y+1+n_lines_deleted < EditLines.size())
         {
             ++n_lines_deleted;
             if(BlockBeginY == y+n_lines_deleted) { BlockBeginY = y; BlockBeginX += EditLines[y].size(); }
@@ -785,12 +786,12 @@ int SelectFont()
     };
     opt options[] =
     {
-        { 8, 8, {},{},{},{},{} }, { 9,  8, {},{},{},{},{} },
-        { 8,14, {},{},{},{},{} },
-        { 8,16, {},{},{},{},{} }, { 9, 16, {},{},{},{},{} },
-        { 8,19, {},{},{},{},{} }, { 9, 19, {},{},{},{},{} },
-        { 8,32, {},{},{},{},{} }, { 9, 32, {},{},{},{},{} },
-        {16,32, {},{},{},{},{} }
+        { 8, 8, {0},{0},{0},{0},{0} }, { 9,  8, {0},{0},{0},{0},{0} },
+        { 8,14, {0},{0},{0},{0},{0} },
+        { 8,16, {0},{0},{0},{0},{0} }, { 9, 16, {0},{0},{0},{0},{0} },
+        { 8,19, {0},{0},{0},{0},{0} }, { 9, 19, {0},{0},{0},{0},{0} },
+        { 8,32, {0},{0},{0},{0},{0} }, { 9, 32, {0},{0},{0},{0},{0} },
+        {16,32, {0},{0},{0},{0},{0} }
     };
     if(VidCellHeight == 8 || VidCellHeight == 14)
     {
