@@ -79,7 +79,7 @@
 # Comments within preprocessor statements
 =PreprocComment	06
 # Unknown preprocessor words
-=PreprocUnknown	3B
+=PreprocUnknown	1B
 # OpenMP:
 =OpenMP		02
 =OpenMPkw	0A

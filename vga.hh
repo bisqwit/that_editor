@@ -73,7 +73,7 @@ void VgaSetMode(unsigned modeno)
     static const unsigned long c64pal[16] =
     {
         0x3E31A2ul, // 0
-        0x000000ul,
+        0x7C70DAul, //0x000000ul,
         0x68A141ul,
         0x7ABFC7ul,
         0xFCFCFCul, // 4

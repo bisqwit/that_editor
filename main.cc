@@ -45,6 +45,9 @@ size_t BlockEndX=0,   BlockEndY=0;
 int     InsertMode=1, WaitingCtrl=0;
 unsigned TabSize  =4;
 
+int UnsavedChanges = 0;
+char* CurrentFileName = 0;
+
 void FileLoad(char* fn)
 {
     fprintf(stderr, "Loading '%s'...\n", fn);
@@ -52,6 +55,9 @@ void FileLoad(char* fn)
     if(!fp) { perror(fn); return; }
     fseek(fp, 0, SEEK_END);
     rewind(fp);
+
+    if(CurrentFileName) free(CurrentFileName);
+    CurrentFileName = strdup(fn);
 
     EditLines.clear();
 
@@ -94,12 +100,21 @@ void FileLoad(char* fn)
     fclose(fp);
     WinX = WinY = 0;
     CurX = CurY = 0;
+    UnsavedChanges = 0;
 }
 void FileNew()
 {
     WinX = WinY = 0;
     CurX = CurY = 0;
     EditLines.clear();
+    WordVecType emptyline;
+    emptyline.push_back('\n' | UnknownColor);
+    EditLines.push_back(emptyline);
+    EditLines.push_back(emptyline);
+    EditLines.push_back(emptyline);
+
+    if(CurrentFileName) free(CurrentFileName);
+    CurrentFileName = 0;
 }
 struct ApplyEngine: public JSF::Applier
 {
@@ -216,6 +231,17 @@ void VisSetCursor()
     unsigned cy = WinY > CurY ? 1 : CurY-WinY; ++cy; if(cy >= VidH) cy = VidH-1;
     VisPutCursorAt(cx,cy);
 }
+const char* fnpart(const char* fn)
+{
+    if(!fn) return "[untitled]";
+    for(;;)
+    {
+        const char* p = strchr(fn, '/');
+        if(!p) break;
+        fn = p+1;
+    }
+    return fn;
+}
 void VisRenderStatus()
 {
     WordVecType Hdr(VidW*2);
@@ -224,13 +250,20 @@ void VisRenderStatus()
     time_t t = time(0);
     struct tm* tm = localtime(&t);
 
+    int showfn = VidW > 60;
     char Buf1[80], Buf2[80];
-    sprintf(Buf1, "Row %-5u/%u Cap=%u Col %-5u", CurY+1,
-        EditLines.size(), EditLines.capacity(),
+    sprintf(Buf1, "%s%sRow %-5u/%u Col %-5u",
+        showfn ? fnpart(CurrentFileName) : "",
+        showfn ? " " : "",
+        CurY+1,
+        EditLines.size(),// EditLines.capacity(),
         CurX+1);
     sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
-    unsigned x1a = VidW*12/70, x1b = x1a + strlen(Buf1);
-    unsigned x2a = VidW*55/70, x2b = x2a + strlen(Buf2);
+    unsigned x1a = VidW*12/70;
+    unsigned x2a = VidW*55/70;
+    if(showfn) x1a = 7;
+    unsigned x1b = x1a + strlen(Buf1);
+    unsigned x2b = x2a + strlen(Buf2);
 
     static const unsigned char slide[] = {3,7,7,7,7,3,3,2};
     static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
@@ -250,8 +283,10 @@ void VisRenderStatus()
             color = (color&0xF000) | '^';
         else if(x == 1 && WaitingCtrl)
             color = (color&0xF000) | WaitingCtrl;
-        else if(x == 4 && InsertMode)
+        else if(x == 3 && InsertMode)
             color = (color&0xF000) | 'I';
+        else if(x == 4 && UnsavedChanges)
+            color = (color&0xF000) | '*';
         else if(x >= x1a && x < x1b && Buf1[x-x1a] != ' ')
             color = (color&0xF000) | Buf1[x-x1a];
         else if(x >= x2a && x < x2b && Buf2[x-x2a] != ' ')
@@ -270,7 +305,11 @@ void VisRenderStatus()
             unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
             if(C64palette) color = 0x7020;
             unsigned char c = StatusLine[p]; if(!c) c = 0x20;
-            if(c != 0x20) color = (color & 0xF000u) | c;
+            if(c != 0x20 || (((color >> 12)) == ((color >> 8)&0xF)))
+            {
+                color = (color & 0xF000u) | c;
+                if((color >> 12) == ((color >> 8)&0xF)) color |= 0x700;
+            }
             if(!C64palette && c != 0x20)
                 switch(color>>12)
                 {
@@ -477,7 +516,7 @@ void PerformEdit(
     char DoingUndo = 0)
 {
     unsigned eol_x = EditLines[y].size();
-    if(eol_x > 0) --eol_x;
+    if(eol_x > 0 && (EditLines[y].back() & 0xFF) == '\n') --eol_x;
     if(x > eol_x) x = eol_x;
 
     UndoEvent event;
@@ -485,15 +524,17 @@ void PerformEdit(
     event.y = y;
     event.n_delete = 0;
 
-    { int s = sprintf(StatusLine,"Edit%u @%u,%u: Delete %u, insert '",
-        UndoAppendOk, x,y,n_delete);
-    for(unsigned b=insert_chars.size(), a=0; a<b && s<252; ++a)
+    if(DoingUndo)
     {
-        char c = insert_chars[a] & 0xFF;
-        if(c == '\n') { StatusLine[s++] = '\\'; StatusLine[s++] = 'n'; }
-        else StatusLine[s++] = c;
-    }
-    sprintf(StatusLine+s, "'");
+        int s = sprintf(StatusLine,"Edit%u @%u,%u: Delete %u, insert '",
+        UndoAppendOk, x,y,n_delete);
+        for(unsigned b=insert_chars.size(), a=0; a<b && s<252; ++a)
+        {
+            char c = insert_chars[a] & 0xFF;
+            if(c == '\n') { StatusLine[s++] = '\\'; StatusLine[s++] = 'n'; }
+            else StatusLine[s++] = c;
+        }
+        sprintf(StatusLine+s, "'");
     }
 
     // Is there something to delete?
@@ -572,25 +613,23 @@ void PerformEdit(
         unsigned insert_beginpos = 0;
         while(insert_beginpos < insert_length)
         {
-            unsigned p = insert_beginpos;
-            if( (insert_chars[p] & 0xFF) == '\n')
+            if( (insert_chars[insert_beginpos] & 0xFF) == '\n')
                 { x = 0; ++y; ++insert_beginpos; }
             else
             {
+                unsigned p = insert_beginpos;
                 while(p < insert_length && (insert_chars[p] & 0xFF) != '\n')
                     ++p;
 
-                WordVecType new_chars;
-                new_chars.assign(
+                unsigned n_inserted = p - insert_beginpos;
+                EditLines[y].insert(
+                    EditLines[y].begin() + x,
                     insert_chars.begin() + insert_beginpos,
                     insert_chars.begin() + p );
-                EditLines[y].insert(EditLines[y].begin() + x,
-                                    new_chars.begin(),
-                                    new_chars.end());
-                if(BlockBeginY == y && BlockBeginX >= x) BlockBeginX += new_chars.size();
-                if(BlockEndY == y && BlockEndX >= x) BlockEndX += new_chars.size();
-                if(CurY == y && CurX >= x) CurX += new_chars.size();
-                x += new_chars.size();
+                if(BlockBeginY == y && BlockBeginX >= x) BlockBeginX += n_inserted;
+                if(BlockEndY == y && BlockEndX >= x) BlockEndX += n_inserted;
+                if(CurY == y && CurX >= x) CurX += n_inserted;
+                x += n_inserted;
                 insert_beginpos = p;
             }
         }
@@ -609,6 +648,8 @@ void PerformEdit(
             AddUndo(event); // add undo, but don't reset redo
             break;
     }
+
+    UnsavedChanges = 1;
 }
 
 void TryUndo()
@@ -915,13 +956,176 @@ int SelectFont()
     return 1;
 }
 
-int main()
+int VerifyUnsavedExit(const char* action)
+{
+    if(!UnsavedChanges) return 1;
+    VisSoftCursor(-1);
+    int s = sprintf(StatusLine, "FILE IS UNSAVED. PROCEED WITH %s? Y/N  ", action);
+    VisPutCursorAt(s-1, VidH-1);
+    VisRenderStatus();
+    int decision = 0;
+    for(;;)
+    {
+        WaitInput(1);
+        int c = getch();
+        if(c == 'Y' || c == 'y') { decision=1; break; }
+        if(c == 'C'-64
+        || c == 'N' || c == 'n') { decision=0; break; }
+        if(c == 0) getch();
+    }
+    StatusLine[0] = 0;
+    VisSetCursor();
+    VisRender();
+    return decision;
+}
+int PromptText(const char* message, const char* deftext, char** result)
+{
+    const int arrow_left = 0x11, arrow_right = 0x10;
+    char data[256] = { 0 };
+    if(deftext) strcpy(data, deftext);
+    unsigned begin_offset = sprintf(StatusLine, "%s", message);
+    char* buffer = StatusLine+begin_offset;
+    unsigned firstPos = 0, curPos = strlen(data);
+    unsigned maxLen = sizeof(StatusLine)-begin_offset-1;
+    unsigned sizex  = VidW - begin_offset;
+    for(;;)
+    {
+        unsigned data_length = strlen(data);
+        if(curPos > data_length) curPos = data_length;
+        if(firstPos > curPos) firstPos = curPos;
+        if(firstPos + (sizex - 2) < curPos) firstPos = curPos - (sizex - 2);
+        // Draw
+        memset(buffer, ' ', sizex);
+        strcpy(buffer+1, data+firstPos);
+        buffer[0]       = firstPos > 0 ? arrow_left : ' ';
+        buffer[sizex-1] = data_length-firstPos > (sizex-2) ? arrow_right : ' ';
+        VisRenderStatus();
+        VisPutCursorAt(begin_offset + (curPos-firstPos+1), VidH-1);
+
+        WaitInput();
+        int c = getch();
+        switch(c)
+        {
+            case 'C'-64:
+                StatusLine[0] = '\0';
+                return 0;
+            case 'B'-64: goto kb_lt;
+            case 'F'-64: goto kb_rt;
+            case 'A'-64: goto kb_hom;
+            case 'E'-64: goto kb_end;
+            case 0:
+                switch(getch())
+                {
+                    case 'K': kb_lt: if(curPos>0) --curPos; break;
+                    case 'M': kb_rt: if(curPos<data_length) curPos++; break;
+                    case 0x47: kb_hom: curPos = 0; break;
+                    case 0x4F: kb_end: curPos = data_length; break;
+                    case 0x53: kb_del: if(curPos >= data_length) break;
+                                       strcpy(data+curPos, data+curPos+1);
+                                       break;
+                    case 0x52: InsertMode = !InsertMode; break;
+                }
+                break;
+            case 'H'-64:
+                if(curPos <= 0) break;
+                strcpy(data+curPos-1, data+curPos);
+                --curPos;
+                if(firstPos > 0) --firstPos;
+                break;
+            case 'D'-64: goto kb_del;
+            case 'Y'-64: curPos = 0; data[0] = '\0'; break;
+            case '\n': case '\r':
+            {
+                StatusLine[0] = '\0';
+                if(*result) free(*result);
+                *result = strdup(data);
+                return 1;
+            }
+            default:
+                if(!InsertMode && curPos >= data_length)
+                    strcpy(data+curPos, data+curPos+1);
+                if(strlen(data) < maxLen)
+                {
+                    if(firstPos > curPos) firstPos = curPos;
+                    memmove(data+curPos+1, data+curPos, strlen(data+curPos)+1);
+                    data[curPos++] = c;
+                }
+        }
+    }
+}
+void InvokeSave(int ask_name)
+{
+    if(ask_name || !CurrentFileName)
+    {
+        char* name = 0;
+        int decision = PromptText("Save to:",
+            CurrentFileName ? CurrentFileName : "",
+            &name);
+        VisSetCursor();
+        VisRender();
+        if(!decision || !name || !*name)
+        {
+            if(name) free(name);
+            return;
+        }
+        if(CurrentFileName) free(CurrentFileName);
+        CurrentFileName = name;
+    }
+    FILE* fp = fopen(CurrentFileName, "wb");
+    if(!fp)
+    {
+        perror(CurrentFileName);
+        return;
+    }
+    for(unsigned a=0; a<EditLines.size(); ++a)
+    {
+        for(unsigned b=EditLines[a].size(), x=0; x<b; ++x)
+        {
+            char c = EditLines[a][x] & 0xFF;
+            if(c == '\n') fputc('\r', fp);
+            fputc(c, fp);
+        }
+    }
+    unsigned long size = ftell(fp);
+    fclose(fp);
+    sprintf(StatusLine, "Saved %lu bytes to %s", size, CurrentFileName);
+    VisRenderStatus();
+    UnsavedChanges = 0;
+}
+void InvokeLoad()
+{
+    char* name = 0;
+    int decision = PromptText("Load what:",
+        CurrentFileName ? CurrentFileName : "",
+        &name);
+    VisSetCursor();
+    VisRender();
+    if(!decision || !name || !*name)
+    {
+        if(name) free(name);
+        return;
+    }
+    FileLoad(name);
+    free(name);
+
+    SyntaxCheckingNeeded = SyntaxChecking_DoingFull;
+    UndoHead=UndoTail=0;
+    RedoHead=RedoTail=0;
+    UndoAppendOk=0;
+}
+
+int main(int argc, char**argv)
 {
 #ifdef __BORLANDC__
     InstallMario();
 #endif
     Syntax.Parse("c.jsf");
-    FileLoad("sample.cpp");
+    FileNew();
+    if(argc == 2)
+    {
+        FileLoad(argv[1]);
+    }
+
     fprintf(stderr, "Beginning render\n");
 
     VgaGetMode();
@@ -983,15 +1187,19 @@ int main()
             case CTRL('F'): goto rt_key;
             case CTRL('C'): // exit
             {
+            try_exit:
                 /* TODO: Check if unsaved */
-                goto exit;
+                if(VerifyUnsavedExit("EXIT"))
+                    goto exit;
+                break;
             }
             case 0x7F:      // ctrl+backspace
-            case CTRL('Z'):
             {
                 TryUndo();
                 break;
             }
+            case CTRL('W'): if(WinY > 0) --WinY; break;
+            case CTRL('Z'): if(WinY+DimY < EditLines.size()) ++WinY; break;
             case CTRL('K'):
             {
                 WaitingCtrl='K';
@@ -1039,8 +1247,22 @@ int main()
                         break;
                     }
                     case 'd': case 'D': case CTRL('D'): // save file
+                    {
+                        InvokeSave( 1 );
+                        break;
+                    }
                     case 'x': case 'X': case CTRL('X'): // save and exit
-                        ;
+                    {
+                        InvokeSave( 0 );
+                        goto try_exit;
+                    }
+                    case 'e': case 'E': case CTRL('E'): // load new file
+                    case 'o': case 'O': case CTRL('O'):
+                    {
+                        if(VerifyUnsavedExit(VidW < 44 ? "FOPEN" : "FILE OPEN"))
+                            InvokeLoad();
+                        break;
+                    }
                     case 'u': case 'U': case CTRL('U'): // ctrl-pgup
                         goto ctrlpgup;
                     case 'v': case 'V': case CTRL('V'): // ctrl-pgdn
@@ -1055,7 +1277,9 @@ int main()
                     {
                         unsigned charcode = EditLines[CurY][CurX] & 0xFF;
                         sprintf(StatusLine,
-                            "Character '%c': hex=%02X, decimal=%d, octal=%03o",
+                            VidW >= 60
+                            ? "Character '%c': hex=%02X, decimal=%d, octal=%03o"
+                            : "Character '%c': 0x%02X = %d = '\\0%03o'",
                             charcode, charcode, charcode, charcode);
                         break;
                     }
@@ -1070,13 +1294,17 @@ int main()
                 break;
             }
             case CTRL('R'):
-                TryRedo();
+            refresh:
+                VgaGetMode();
+                VisSetCursor();
+                VisRender();
                 break;
             case CTRL('G'):
                 FindPair();
                 if(CurY < WinY || CurY >= WinY+DimY)
                     WinY = CurY > DimY/2 ? CurY - DimY/2 : 0;
                 break;
+            case CTRL('T'): goto askmode;
             case 0:;
             {
                 switch(getch())
@@ -1106,7 +1334,8 @@ int main()
                     case 0x4F: // end
                         #define k_end() do { \
                             CurX = EditLines[CurY].size(); \
-                            if(CurX > 0) --CurX; /* past LF */ } while(0)
+                            if(CurX > 0 && (EditLines[CurY].back() & 0xFF) == '\n') \
+                                --CurX; /* past LF */ } while(0)
                     end:
                         k_end();
                         if(shift) dragalong = 1;
@@ -1188,7 +1417,7 @@ int main()
                     delkey:
                     {
                         unsigned eol_x = EditLines[CurY].size();
-                        if(eol_x > 0) --eol_x;
+                        if(eol_x > 0 && (EditLines[CurY].back() & 0xFF) == '\n') --eol_x;
                         if(CurX > eol_x) { CurX = eol_x; break; } // just do end-key
                         WordVecType empty;
                         PerformEdit(CurX,CurY, 1u, empty);
@@ -1210,6 +1439,7 @@ int main()
                     case 0x5A: dblh = !dblh; goto newmode; // shift-F7
                     case 0x5B: // shift-F8
                     case 0x42: // F8
+                    askmode:
                         if(SelectFont())
                         {
                         newmode:
@@ -1250,12 +1480,9 @@ int main()
                         }
                         VisRender();
                         break;
-                    case 0x13: // alt+R
-                    refresh:
-                        VgaGetMode();
-                        VisSetCursor();
-                        VisRender();
-                        break;
+                    case 0x2C: TryUndo(); break; // alt+Z
+                    case 0x15: TryRedo(); break; // alt+Y
+                    case 0x13: TryRedo(); break; // alt+R
                 }
                 break;
             }

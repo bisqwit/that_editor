@@ -41,6 +41,10 @@ public:
     {
         resize(length, value);
     }
+    VecType(const T* first, const T* last) : data(0),len(0),cap(0)
+    {
+        assign(first, last);
+    }
     VecType(const VecType& b) : data(0), len(b.len), cap(b.len)
     {
         if(len)
@@ -94,15 +98,45 @@ public:
             copy_construct(&data[0], first, newlen);
         }
         else if(len < newlen)
-            copy_construct(&data[len],
-                copy_assign(&data[0], first, len),
-                newlen-len);
+        {
+            copy_assign(&data[0], first, len);
+            copy_construct(&data[len], first+len, newlen-len);
+        }
         else // len >= newlen
         {
             copy_assign(&data[0], first, newlen);
             destroy(&data[newlen], len-newlen);
         }
         len = newlen;
+    }
+
+    void assign(size_type newlen, Ttype value)
+    {
+      #if 0
+        clear();
+        resize(newlen, value);
+      #else
+        if(cap < newlen)
+        {
+            destroy(&data[0], len);
+            deallocate(data, cap);
+            data = allocate(cap = newlen);
+            construct(&data[0], newlen, value);
+        }
+        else if(len < newlen)
+        {
+            for(size_type a=0; a<len; ++a)
+                data[a] = value;
+            construct(&data[len], newlen-len, value);
+        }
+        else // len >= newlen
+        {
+            for(size_type a=0; a<newlen; ++a)
+                data[a] = value;
+            destroy(&data[newlen], len-newlen);
+        }
+        len = newlen;
+      #endif
     }
 
 public:
@@ -217,61 +251,133 @@ public:
                     count < tail_length ? count : tail_length;
                 unsigned num_tail_bytes_to_movecopy =
                     tail_length - num_tail_bytes_after_current_area;
-              #ifdef Debug__UsePlacementNew
-                fprintf(stdout, "Input (%u):", count);
+              #ifdef UsePlacementNew
+                /*fprintf(stdout, "Input (%u):", count);
                 {for(unsigned a=0; a<count; ++a) fprintf(stdout, "\n\t%p", &first[a][0]);}
                 fprintf(stdout, "\n");
                 fprintf(stdout, "Before (%u + %u):", len, cap);
                 {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
                 {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
-                fprintf(stdout, "\n");
+                fprintf(stdout, "\n");*/
+              #else
+                /*fprintf(stdout, "Input (%u): '%.*s'\n", count, count*sizeof(T), (const char*)first);
+                fprintf(stdout, "Before (%u + %u):", len,cap);
+                fprintf(stdout, "\n\t%u:\t'%.*s'\n\t%u:\t'%.*s'\n",
+                    len, len*sizeof(T), (const char*)data,
+                    (cap-len), (cap-len)*sizeof(T), (const char*)(data+len));*/
               #endif
-                move_construct(&data[len], &data[tail_source_pos+num_tail_bytes_to_movecopy], num_tail_bytes_after_current_area);
-              #ifdef Debug__UsePlacementNew
-                fprintf(stdout, "After move_construct(%u,%u,%u):",len,tail_source_pos+num_tail_bytes_to_movecopy,num_tail_bytes_after_current_area);
+                move_construct(&data[tail_target_pos + num_tail_bytes_to_movecopy],
+                               &data[tail_source_pos+num_tail_bytes_to_movecopy],
+                               num_tail_bytes_after_current_area);
+              #ifdef UsePlacementNew
+                /*fprintf(stdout, "After move_construct(%u,%u,%u):",
+                    tail_target_pos + num_tail_bytes_to_movecopy,
+                    tail_source_pos + num_tail_bytes_to_movecopy,
+                    num_tail_bytes_after_current_area);
                 {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
                 {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
-                fprintf(stdout, "\n");
+                fprintf(stdout, "\n");*/
+              #else
+                /*fprintf(stdout, "After move_construct(%u,%u,%u):",
+                    tail_target_pos + num_tail_bytes_to_movecopy,
+                    tail_source_pos + num_tail_bytes_to_movecopy,
+                    num_tail_bytes_after_current_area);
+                fprintf(stdout, "\n\t%u:\t'%.*s'\n\t%u:\t'%.*s'\n",
+                    len, len*sizeof(T), (const char*)data,
+                    (cap-len), (cap-len)*sizeof(T), (const char*)(data+len));*/
               #endif
                 if(num_tail_bytes_to_movecopy > 0)
                 {
-                    move_assign_backwards(&data[ins_pos+count], &data[ins_pos], num_tail_bytes_to_movecopy);
-                  #ifdef Debug__UsePlacementNew
-                    fprintf(stdout, "After move_assign_backwards(%u,%u,%u):", ins_pos+count,ins_pos,num_tail_bytes_to_movecopy);
+                    move_assign_backwards(
+                        &data[ins_pos+count],
+                        &data[ins_pos],
+                        num_tail_bytes_to_movecopy);
+                  #ifdef UsePlacementNew
+                    /*fprintf(stdout, "After move_assign_backwards(%u,%u,%u):", ins_pos+count,ins_pos,num_tail_bytes_to_movecopy);
+                    {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
+                    {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
+                    fprintf(stdout, "\n");*/
+                  #else
+                    /*fprintf(stdout, "After move_assign_backwards(%u,%u,%u):", ins_pos+count,ins_pos,num_tail_bytes_to_movecopy);
+                    fprintf(stdout, "\n\t%u:\t'%.*s'\n\t%u:\t'%.*s'\n",
+                        len, len*sizeof(T), (const char*)data,
+                        (cap-len), (cap-len)*sizeof(T), (const char*)(data+len));*/
+                  #endif
+                }
+                unsigned num_piece_bytes_after_current_area =
+                    (ins_pos + count) > len ? (ins_pos+count)-len : 0;
+                unsigned num_piece_bytes_to_copy =
+                    count - num_piece_bytes_after_current_area;
+                if(num_piece_bytes_to_copy > 0)
+                {
+                    copy_assign(
+                        &data[ins_pos],
+                        first,
+                        num_piece_bytes_to_copy);
+                  #ifdef UsePlacementNew
+                    /*fprintf(stdout, "After copy_assign(%u,%u):", ins_pos,num_piece_bytes_to_copy);
                     {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
                     {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
                     fprintf(stdout, "\n");
+                    fflush(stdout);*/
+                  #else
+                    /*fprintf(stdout, "After copy_assign(%u,%u):", ins_pos,num_piece_bytes_to_copy);
+                    fprintf(stdout, "\n\t%u:\t'%.*s'\n\t%u:\t'%.*s'\n",
+                        len, len*sizeof(T), (const char*)data,
+                        (cap-len), (cap-len)*sizeof(T), (const char*)(data+len));
+                    fflush(stdout);*/
                   #endif
                 }
-                copy_assign(&data[ins_pos], first, count);
-              #ifdef Debug__UsePlacementNew
-                fprintf(stdout, "After copy_assign(%u,%u):", ins_pos, count);
-                {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
-                {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
-                fprintf(stdout, "\n");
-                fflush(stdout);
-              #endif
+                if(num_piece_bytes_after_current_area > 0)
+                {
+                    copy_construct(
+                        &data[len],
+                        first+num_piece_bytes_to_copy,
+                        num_piece_bytes_after_current_area);
+                  #ifdef UsePlacementNew
+                    /*fprintf(stdout, "After copy_construct(%u,%u):", len, num_piece_bytes_after_current_area);
+                    {for(unsigned a=0; a<len; ++a) fprintf(stdout, "\n\t%p", &data[a][0]);}
+                    {for(unsigned a=len; a<cap; ++a) fprintf(stdout, "\n\t[%p]", &data[a][0]);}
+                    fprintf(stdout, "\n");
+                    fflush(stdout);*/
+                  #else
+                    /*fprintf(stdout, "After copy_construct(%u,%u):", len, num_piece_bytes_after_current_area);
+                    fprintf(stdout, "\n\t%u:\t'%.*s'\n\t%u:\t'%.*s'\n",
+                        len, len*sizeof(T), (const char*)data,
+                        (cap-len), (cap-len)*sizeof(T), (const char*)(data+len));
+                    fflush(stdout);*/
+                  #endif
+                }
             }
             len += count;
-            return;
+            goto Done;
         }
+      {
         size_type newcap = (cap+count)*2;
-        if(ins_pos == len)
+        /*if(ins_pos == len)
         {
             reserve(newcap);
             copy_construct(&data[ins_pos], first, count);
             len += count;
-            return;
-        }
+            goto Done;
+        }*/
         T * newdata = allocate(newcap);
         move_construct(&newdata[0], &data[0], ins_pos);
         copy_construct(&newdata[ins_pos], first, count);
         move_construct(&newdata[ins_pos+count], &data[ins_pos], len-ins_pos);
+        #ifndef UsePlacementNew
+        /*fprintf(stdout, "Became '%.*s'\n", (len+count)*sizeof(T), (const char*)newdata);*/
+        #endif
         destroy(&data[0], len);
         deallocate(data, cap);
         len += count;
         data = newdata;
         cap  = newcap;
+      }
+   Done:;
+        #ifndef UsePlacementNew
+        /*fprintf(stdout, "Indeed, became '%.*s'\n", len*sizeof(T), (const char*)data);*/
+        #endif
     }
 
     void erase(iterator pos)
