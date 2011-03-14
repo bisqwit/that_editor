@@ -243,7 +243,7 @@ public:
                  *      tail_target_pos = 7
                  *      num_tail_bytes_after_current_area = min(tail_length, count)
                  */
-                unsigned new_length = len + count;
+                //unsigned new_length = len + count;
                 unsigned tail_length = len - ins_pos;
                 unsigned tail_source_pos = ins_pos;
                 unsigned tail_target_pos = ins_pos + count;
@@ -523,6 +523,9 @@ private:
         for(size_type a=count; a-- > 0; )
             /*target[a].~T();*/
             target[a].Destruct();
+      #else
+        target=target;
+        count=count;
       #endif
     }
     static void move_assign(T * target, T * source, size_type count)
@@ -609,6 +612,7 @@ private:
     static void deallocate(T * p, size_type n)
     {
         free( (void*) p );
+        n=n;
     }
 
 private:

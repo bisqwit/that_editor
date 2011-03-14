@@ -266,13 +266,11 @@ private:
                 while(*line == ' ' || *line == '\t') ++line;
                 if(strcmp(line, "done") == 0) break;
                 if(*line == '"') ++line;
-                unsigned a = table_keys.size();
                 while(*line != '"' && *line != '\0')
                     table_keys.push_back(*line++);
                 table_keys.push_back('\0');
                 if(*line == '"') ++line;
                 while(*line == ' ' || *line == '\t') ++line;
-                unsigned b = table_targets.size();
                 //fprintf(stdout, "[%s]", line);
                 while(*line != '\0')
                     table_targets.push_back(*line++);

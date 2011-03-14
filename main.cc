@@ -218,6 +218,8 @@ void VisPutCursorAt(unsigned cx,unsigned cy)
     _asm { mov ah, 2; mov bh, 0; mov dh, cuy; mov dl, cux; int 0x10 }
     _asm { mov ah, 1; mov cx, size; int 0x10 }
     CursorCounter=0;
+#else
+    cx=cx; cy=cy;
 #endif
 }
 void VisSetCursor()
@@ -250,9 +252,9 @@ void VisRenderStatus()
     sprintf(Buf1, "%s%sRow %-5u/%u Col %-5u",
         showfn ? fnpart(CurrentFileName) : "",
         showfn ? " " : "",
-        CurY+1,
-        EditLines.size(),// EditLines.capacity(),
-        CurX+1);
+        (unsigned) (CurY+1),
+        (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
+        (unsigned) (CurX+1));
     sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
     unsigned x1a = VidW*12/70;
     unsigned x2a = VidW*55/70;
@@ -376,7 +378,7 @@ void VisRender()
 
 unsigned wx = ~0u, wy = ~0u, cx = ~0u, cy = ~0u;
 
-enum
+enum SyntaxCheckingType
 {
     SyntaxChecking_IsPerfect = 0,
     SyntaxChecking_DidEdits = 1,
@@ -783,12 +785,12 @@ int SelectFont()
     };
     opt options[] =
     {
-        { 8, 8 }, { 9,  8},
-        { 8,14 },
-        { 8,16 }, { 9, 16},
-        { 8,19 }, { 9, 19},
-        { 8,32 }, { 9, 32},
-        {16,32 }
+        { 8, 8, {},{},{},{},{} }, { 9,  8, {},{},{},{},{} },
+        { 8,14, {},{},{},{},{} },
+        { 8,16, {},{},{},{},{} }, { 9, 16, {},{},{},{},{} },
+        { 8,19, {},{},{},{},{} }, { 9, 19, {},{},{},{},{} },
+        { 8,32, {},{},{},{},{} }, { 9, 32, {},{},{},{},{} },
+        {16,32, {},{},{},{},{} }
     };
     if(VidCellHeight == 8 || VidCellHeight == 14)
     {
@@ -1289,7 +1291,6 @@ int main(int argc, char**argv)
                 break;
             }
             case CTRL('R'):
-            refresh:
                 VgaGetMode();
                 VisSetCursor();
                 VisRender();
