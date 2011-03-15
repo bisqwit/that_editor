@@ -298,6 +298,7 @@ private:
                   TableItemCompareForSort);
         }
     }
+    // Removes comments and trailing space from the buffer
     void cleanup(char* Buf)
     {
         char* end = strchr(Buf, '\0');
@@ -316,6 +317,10 @@ private:
           || end[-1] == '\t')) --end;
         *end = '\0';
     }
+    // Search given table for the given string.
+    // Is used by BindStates() for finding states for binding,
+    // but also used by Apply for searching a string table
+    // (i.e. used when coloring reserved words).
     static state* findstate
         (table_item* table, unsigned table_size, const char* s, unsigned n=0)
     {
@@ -336,6 +341,7 @@ private:
         }
         return 0;
     }
+    // Case-ignorant version
     static state* findstate_i
         (table_item* table, unsigned table_size, const char* s, unsigned n=0)
     {
@@ -356,12 +362,15 @@ private:
         }
         return 0;
     }
+    // Find color-struct by name
     color* findcolor(const char* name) const
     {
         color* c = colors;
         for(; c && strcmp(c->name, name) != 0; c = c->next) { }
         return c;
     }
+
+    // Converted state-names into pointers to state structures for fast access
     void BindStates()
     {
         unsigned num_states = 0;
