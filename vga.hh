@@ -282,7 +282,6 @@ void VgaSetCustomMode(
     clock /= vtotal;
     clock /= htotal;
     if(is_half)   clock /= 2.0;
-    if(is_double) clock /= 2.0;
     VidFPS = clock;
 #endif
 

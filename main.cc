@@ -2,6 +2,8 @@
 #include <time.h>
 #include <ctype.h>
 
+#define CTRL(c) ((c) & 0x1F)
+
 #ifdef __BORLANDC__
 # include <dos.h> // for MK_FP
 # include <conio.h>
@@ -11,7 +13,7 @@ static unsigned      kbhitptr   = 0;
 static unsigned char kbhitbuf[] =
 {
     // simulated input for testing with valgrind
-    'K'-64, 'V'-64, 8
+    CTRL('K'), CTRL('V'), 8
 };
 # define kbhit() (kbhitptr < sizeof(kbhitbuf))
 # define getch() kbhitbuf[kbhitptr++]
@@ -915,10 +917,10 @@ int SelectFont()
               sel_y = -1; }
         else if(c == 13 || c == 10)
             break;
-        else if(c == 'A'-64) goto hom;
-        else if(c == 'E'-64) goto end;
-        else if(c == 'U'-64) goto pgup;
-        else if(c == 'V'-64) goto pgdn;
+        else if(c == CTRL('A')) goto hom;
+        else if(c == CTRL('E')) goto end;
+        else if(c == CTRL('U')) goto pgup;
+        else if(c == CTRL('V')) goto pgdn;
         else if(c == '-')
             { if(sel_y) sel_y=0; else sel_x=0; }
         else if(c == ' ' || c == '+')
@@ -968,7 +970,7 @@ int VerifyUnsavedExit(const char* action)
         WaitInput(1);
         int c = getch();
         if(c == 'Y' || c == 'y') { decision=1; break; }
-        if(c == 'C'-64
+        if(c == CTRL('C')
         || c == 'N' || c == 'n') { decision=0; break; }
         if(c == 0) getch();
     }
@@ -1005,13 +1007,13 @@ int PromptText(const char* message, const char* deftext, char** result)
         int c = getch();
         switch(c)
         {
-            case 'C'-64:
+            case CTRL('C'):
                 StatusLine[0] = '\0';
                 return 0;
-            case 'B'-64: goto kb_lt;
-            case 'F'-64: goto kb_rt;
-            case 'A'-64: goto kb_hom;
-            case 'E'-64: goto kb_end;
+            case CTRL('B'): goto kb_lt;
+            case CTRL('F'): goto kb_rt;
+            case CTRL('A'): goto kb_hom;
+            case CTRL('E'): goto kb_end;
             case 0:
                 switch(getch())
                 {
@@ -1025,14 +1027,14 @@ int PromptText(const char* message, const char* deftext, char** result)
                     case 0x52: InsertMode = !InsertMode; break;
                 }
                 break;
-            case 'H'-64:
+            case CTRL('H'):
                 if(curPos <= 0) break;
                 strcpy(data+curPos-1, data+curPos);
                 --curPos;
                 if(firstPos > 0) --firstPos;
                 break;
-            case 'D'-64: goto kb_del;
-            case 'Y'-64: curPos = 0; data[0] = '\0'; break;
+            case CTRL('D'): goto kb_del;
+            case CTRL('Y'): curPos = 0; data[0] = '\0'; break;
             case '\n': case '\r':
             {
                 StatusLine[0] = '\0';
@@ -1136,7 +1138,6 @@ int main(int argc, char**argv)
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
 #endif
 
-    #define CTRL(c) ((c) & 0x1F)
     for(;;)
     {
         WaitInput();
