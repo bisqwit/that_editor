@@ -346,7 +346,7 @@ int main()
                 camray.Normalize();
                 camlookmatrix.Transform(camray);
                 XYZ campix;
-				RayTrace(campix, campos, camray, MAXTRACE);
+                RayTrace(campix, campos, camray, MAXTRACE);
               #pragma omp critical
               {
                 // Update frame luminosity info for automatic contrast adjuster
@@ -369,7 +369,7 @@ int main()
                     unsigned k = 0;
                     double b = 1e6;
                     // Find closest match from palette
-					for(unsigned j=0; j<16; ++j)
+                    for(unsigned j=0; j<16; ++j)
                     {
                         double a = (qtryG - PalG[j]).Squared();
                         if(a < b) { b = a; k = j; }

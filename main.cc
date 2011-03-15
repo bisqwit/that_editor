@@ -1445,15 +1445,23 @@ int main(int argc, char**argv)
                             if(VidH > 127) VidH = 127;
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                              use9bit, dblw, dblh);
+                            char FPSstr[64] = "";
+                            if(VidW > 60)
+                            {
+                                long fpsval = VidFPS*1000.0 + 0.5;
+                                sprintf(FPSstr, "; fps=%ld.%03ld", fpsval/1000, fpsval%1000);
+                                // ^ For some reason, fltform print doesn't work
+                            }
                             sprintf(StatusLine,
-                                "%s: %ux%u %s %ux%u font (%ux%u)",
+                                "%s: %ux%u %s %ux%u font (%ux%u)%s",
                                     VidW < 53 ? "Mode chg" : "Selected text mode",
                                     VidW,VidH,
                                     VidW < 44 ? "w/" : "with",
                                     (use9bit ? 9 : 8) * (FatMode?2:1),
                                     VidCellHeight,
                                     VidW * (use9bit ? 9 : 8) * (1+dblw) * (FatMode?2:1),
-                                    VidH * VidCellHeight * (1+dblh));
+                                    VidH * VidCellHeight * (1+dblh),
+                                    FPSstr);
                         }
                         VisSetCursor();
                         VisRender();

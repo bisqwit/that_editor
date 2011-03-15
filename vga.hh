@@ -5,6 +5,7 @@ unsigned short VidMem[256*256];
 #endif
 
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
+double VidFPS = 60.0;
 const unsigned char* VgaFont = 0;
 int C64palette = 0, FatMode = 0, DispUcase;
 
@@ -244,7 +245,8 @@ void VgaSetCustomMode(
     outportb(0x3D4, 0x11); outportb(0x3D5, inportb(0x3D5)|0x80);
     outport(0x3D4, 0x67 | (0 << 8)); // S3 trio
 
-    outportb(0x3C2, 0x63/*0x02*/); // misc output
+    unsigned misc_output = 0x63;/*0x02*/
+    outportb(0x3C2, misc_output); // misc output
 
     {unsigned char Gfx[9] = { 0,0,0,0,0,0x10,0x0E,0x0F,0xFF };
     for(unsigned a=0; a<9; ++a) outport(0x3CE, a | (Gfx[a] << 8));}
@@ -273,6 +275,15 @@ void VgaSetCustomMode(
     *(unsigned char*)MK_FP(0x40, 0x84) = height-1;
     *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
     *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
+
+    double clock = 28322000.0;
+    if(((misc_output >> 2) & 3) == 0) clock = 25175000.0;
+    clock /= (is_9pix ? 9.0 : 8.0);
+    clock /= vtotal;
+    clock /= htotal;
+    if(is_half)   clock /= 2.0;
+    if(is_double) clock /= 2.0;
+    VidFPS = clock;
 #endif
 
     if(FatMode)
@@ -293,6 +304,7 @@ inline unsigned short* GetVidMem(unsigned x, unsigned y)
 {
     if(C64palette)
     {
+        // Compensate for margins
         register unsigned offs = (x + 2) + (y + 2) * (VidW + 4);
         if(FatMode) offs <<= 1;
         return VidMem + offs;
