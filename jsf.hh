@@ -18,27 +18,17 @@ public:
         char Buf[512]={0};
         fprintf(stdout, "Parsing syntax file... "); fflush(stderr);
         TabType cc;
-        color* colors = 0;
+        char colors_sorted = 0;
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
-            if(Buf[0] == '=') colors = ParseColorDeclaration(Buf+1, colors);
+            if(Buf[0] == '=') ParseColorDeclaration(Buf+1, cc);
             else if(Buf[0] == ':')
             {
-                if(cc.empty() && colors)
+                if(!colors_sorted)
                 {
-                    unsigned n=0;
-                    {for(color* c = colors; c; c = c->next) ++n;}
-                    cc.resize(n);
-                    for(n=0; colors; ++n)
-                    {
-                        cc[n].token = colors->name;
-                        cc[n].state = (struct state*)colors->attr;
-                        color* next = colors->next;
-                        delete colors;
-                        colors = next;
-                    }
                     sort(cc);
+                    colors_sorted = 1;
                 }
                 ParseStateStart(Buf+1, cc);
             }
@@ -55,6 +45,7 @@ public:
     struct state;
     struct ApplyState
     {
+        /* std::vector<unsigned char> */
         CharVecType buffer;
         int buffering;
         int recolor, noeat;
@@ -122,7 +113,6 @@ public:
         }
     }
 private:
-    struct color { struct color* next; char* name; int attr; };
     struct option;
     struct state
     {
@@ -141,13 +131,15 @@ private:
         inline void Construct(const table_item& b)
             { token=b.token; state=b.state; state_name=b.state_name; }
         inline void Destruct() { }
-        void swap(table_item& b)
+        inline void swap(table_item& b)
         {
-            char* t = token; token=b.token; b.token=t;
-                  t = state_name; state_name=b.state_name; b.state_name=t;
-                  t = (char*)state; state=b.state; b.state=(struct state*)t;
+            register char* t;
+            t = token; token=b.token; b.token=t;
+            t = state_name; state_name=b.state_name; b.state_name=t;
+            t = (char*)state; state=b.state; b.state=(struct state*)t;
         }
     };
+    /* std::vector<table_item> without STL, for Borland C++ */
     #define UsePlacementNew
     #define T       table_item
     #define VecType TabType
@@ -166,7 +158,7 @@ private:
         unsigned buffer: 1;
         unsigned strings:2; // 0=no strings, 1=strings, 2=istrings
     };
-    color* ParseColorDeclaration(char* line, color* colors)
+    void ParseColorDeclaration(char* line, TabType& colortable)
     {
         while(*line==' '||*line=='\t') ++line;
         char* namebegin = line;
@@ -175,14 +167,10 @@ private:
         while(*line==' '||*line=='\t') ++line;
         int attr = strtol(line, 0, 16);
         *nameend = '\0';
-        color* n = new color;
-        n->name = strdup(namebegin);
-        n->attr = attr;
-        n->next = colors;
-        //fprintf(stdout, "'%s' is 0x%02X\n", n->name, n->attr);
-        return n;
+        table_item tmp = { strdup(namebegin), (struct state*) attr, 0 };
+        colortable.push_back(tmp);
     }
-    inline void ParseStateStart(char* line, const TabType& cc)
+    inline void ParseStateStart(char* line, const TabType& colortable)
     {
         while(*line==' '||*line=='\t') ++line;
         char* namebegin = line;
@@ -193,7 +181,7 @@ private:
         struct state* s = new state;
         memset(s, 0, sizeof(*s));
         s->name = strdup(namebegin);
-        {state* c = findstate(cc, line);
+        {state* c = findstate(colortable, line);
         if(!c) { s->attr = 0x4A; fprintf(stdout,"Unknown color: '%s'\n", line); }
         else   s->attr = (int) c;}
         s->next = states;
@@ -201,14 +189,13 @@ private:
     }
     inline void ParseStateLine(char* line, FILE* fp)
     {
-        state*  s = states;
         option* o = new option;
         memset(o, 0, sizeof(*o));
         while(*line == ' ' || *line == '\t') ++line;
         if(*line == '*')
         {
             for(unsigned a=0; a<256; ++a)
-                s->options[a] = o;
+                states->options[a] = o;
             ++line;
         }
         else if(*line == '"')
@@ -235,11 +222,11 @@ private:
                             case 'v': *line = '\v'; break;
                             case 'b': *line = '\b'; break;
                         }
-                    do s->options[first] = o;
+                    do states->options[first] = o;
                     while(first++ != (unsigned char)*line);
                 }
                 else
-                    s->options[first] = o;
+                    states->options[first] = o;
             }
             if(*line == '"') ++line;
         }
@@ -252,7 +239,7 @@ private:
         o->state_name = strdup(namebegin);
         /*fprintf(stdout, "'%s' for these: ", o->state_name);
         for(unsigned c=0; c<256; ++c)
-            if(s->options[c] == o)
+            if(states->options[c] == o)
                 fprintf(stdout, "%c", c);
         fprintf(stdout, "\n");*/
 
@@ -266,7 +253,7 @@ private:
             switch(*opt_begin)
             {
                 case 'n':
-                    if(strcmp(opt_begin, "noeat") == 0) { o->noeat = 1; break; }
+                    if(strcmp(opt_begin+1, /*"n"*/"oeat") == 0) { o->noeat = 1; break; }
                 case 'b':
                     if(strcmp(opt_begin, "buffer") == 0) { o->buffer = 1; break; }
                 case 's':
@@ -338,7 +325,7 @@ private:
     // Is used by BindStates() for finding states for binding,
     // but also used by Apply for searching a string table
     // (i.e. used when coloring reserved words).
-    static state* findstate(const TabType& table, const char* s, unsigned n=0)
+    static state* findstate(const TabType& table, const char* s, register unsigned n=0)
     {
         if(!n) n = strlen(s);
         unsigned begin = 0, end = table.size();
@@ -346,7 +333,7 @@ private:
         {
             unsigned half = (end-begin) >> 1;
             const table_item& m = table[begin + half];
-            int c = strncmp(m.token, s, n);
+            register int c = strncmp(m.token, s, n);
             if(c == 0)
             {
                 if(m.token[n] == '\0') return m.state;
@@ -358,7 +345,7 @@ private:
         return 0;
     }
     // Case-ignorant version
-    static state* findstate_i(const TabType& table, const char* s, unsigned n=0)
+    static state* findstate_i(const TabType& table, const char* s, register unsigned n=0)
     {
         if(!n) n = strlen(s);
         unsigned begin = 0, end = table.size();
@@ -366,7 +353,7 @@ private:
         {
             unsigned half = (end-begin) >> 1;
             const table_item& m = table[begin + half];
-            int c = strnicmp(m.token, s, n);
+            register int c = strnicmp(m.token, s, n);
             if(c == 0)
             {
                 if(m.token[n] == '\0') return m.state;
