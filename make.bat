@@ -7,6 +7,15 @@ rem bcc -B -3 -ff -k- -w -w-sig -w-inl -P -d -a -O -mc -I../include -L../lib mai
 rem del e.exe
 rem main.exe e.exe
 
-bcc -S -f287 -ff -Ff -3 -w -w-sig -w-inl -P -d -a -O2 -Os -mc -I../include main.cc
+bcc -S -f287 -ff -Fm -4 -x- -RT- -w -w-sig -w-inl -P -d -a -O2 -Os -OW -mc -I../include main.cc
 tasm /D__COMPACT__ /D__CDECL__ /r/ml/m9 main.asm,main.obj
-tlink ..\lib\c0c.obj main.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
+tlink /3 /m /P=65536 /yx+ ..\lib\c0fc.obj main.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
+
+REM c0c = normal startup module
+REM c0fc = when -Fm or -Fs is used, stack is placed in DS so SS=DS
+
+rem bcc -P -WX -ml -I..\inc45 -L..\lib\dpmi main.cc
+REM rem bcc -S -f287 -ff -Ff -3 -w -w-sig -w-inl -P -d -a -O2 -Os -WX -ml -I..\inc45 main.cc
+REM bcc -S -f287 -ff -Ff -3 -w -w-sig -w-inl -P -d -a -WX -ml -I..\inc45 main.cc
+REM tasm /D__DPMI__ /D__LARGE__ /D__CDECL__ /r/ml/m9 main.asm,main.obj
+REM tlink /Txe /3 /m /P=2 /yx ..\lib\dpmi\c0x.obj main.obj, e.exe,,..\lib\dpmi\dpmi16.lib ..\lib\dpmi\cwl.lib ..\lib\mathwl.lib

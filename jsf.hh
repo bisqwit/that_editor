@@ -17,7 +17,7 @@ public:
     void Parse(FILE* fp)
     {
         char Buf[512]={0};
-        fprintf(stdout, "Parsing syntax file... "); fflush(stderr);
+        fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
         TabType cc;
         char colors_sorted = 0;
         while(fgets(Buf, sizeof(Buf), fp))
@@ -36,12 +36,12 @@ public:
             else if(Buf[0] == ' ' || Buf[0] == '\t')
                 ParseStateLine(Buf, fp);
         }
-        fprintf(stdout, "Binding... "); fflush(stderr);
+        fprintf(stdout, "Binding... "); fflush(stdout);
         BindStates();
 
         for(unsigned n=0; n<cc.size(); ++n) free(cc[n].token);
 
-        fprintf(stdout, "Done\n"); fflush(stderr);
+        fprintf(stdout, "Done\n"); fflush(stdout);
     }
     struct state;
     struct ApplyState
@@ -413,7 +413,7 @@ private:
             states = states->next;
     }   }
 
-    static cdecl int TableItemCompareForSort(const void * a, const void * b)
+    static int TableItemCompareForSort(const void * a, const void * b)
     {
         table_item * aa = (table_item *)a;
         table_item * bb = (table_item *)b;
@@ -421,6 +421,17 @@ private:
     }
     static inline void sort(TabType& tab)
     {
+        /*
+        // Sort the table using insertion sort
+        unsigned b = tab.size();
+        for(unsigned i, j=1; j<b; ++j)
+        {
+            table_item k = tab[j];
+            for(i=j; i>=1 && strcmp( k.token, tab[i-1].token ) > 0; ++i)
+                tab[i] = tab[i-1];
+            tab[i] = k;
+        }
+        */
         qsort(&tab[0], tab.size(), sizeof(tab[0]), TableItemCompareForSort);
     }
 };
