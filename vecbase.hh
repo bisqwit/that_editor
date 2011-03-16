@@ -1,5 +1,8 @@
-#include <stdlib.h>
-#include <malloc.h>
+#ifndef vecBaseIncludes
+# define vecBaseIncludes
+# include <stdlib.h>
+# include <malloc.h>
+#endif
 
 class VecType
 {
@@ -10,13 +13,13 @@ public:
     typedef T * iterator;
     typedef T * pointer;
     typedef T & reference;
-    typedef const T * const_iterator;
-    typedef const T * const_pointer;
-    typedef const T & const_reference;
+    typedef T const * const_iterator;
+    typedef T const * const_pointer;
+    typedef T const & const_reference;
     typedef size_t size_type;
 
 #ifdef UsePlacementNew
-    #define Ttype const T&
+    #define Ttype T const&
 #else
     #define Ttype T
 #endif
@@ -41,7 +44,7 @@ public:
     {
         resize(length, value);
     }
-    VecType(const T* first, const T* last) : data(0),len(0),cap(0)
+    VecType(T const* first, T const* last) : data(0),len(0),cap(0)
     {
         assign(first, last);
     }
@@ -86,8 +89,8 @@ public:
     }
 #endif
 
-    void assign(const T* first,
-                const T* last)
+    void assign(T const* first,
+                T const* last)
     {
         size_type newlen = (size_type) (last-first);
         if(cap < newlen)
@@ -221,8 +224,8 @@ public:
     }
 
     void insert(iterator pos,
-                const T* first,
-                const T* last)
+                T const* first,
+                T const* last)
     {
         size_type ins_pos = pos - begin();
         size_type count   = (size_type) (last-first);
@@ -504,7 +507,7 @@ private:
       #ifdef UsePlacementNew
             target[a].Construct();
       #else
-            /*new(&target[a]) T();*/ target[a] = 0;
+            /*new(&target[a]) T();*/ target[a] = (T)0;
       #endif
         }
     }
@@ -573,22 +576,22 @@ private:
   #endif
 #endif
     }
-    static const T*
-            copy_assign(T * target, const T* source, size_type count)
+    static T const*
+            copy_assign(T * target, T const* source, size_type count)
     {
         for(size_type a=0; a<count; ++a)
             target[a] = *source++;
         return source;
     }
-    static const T*
-            copy_assign_backwards(T * target, const T* source, size_type count)
+    static T const*
+            copy_assign_backwards(T * target, T const* source, size_type count)
     {
         for(size_type a=count; a-- > 0; )
             target[a] = source[a];
         return source;
     }
-    static const T*
-            copy_construct(T * target, const T* source, size_type count)
+    static T const*
+            copy_construct(T * target, T const* source, size_type count)
     {
         for(size_type a=0; a<count; ++a)
           #ifdef UsePlacementNew
