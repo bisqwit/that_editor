@@ -1,3 +1,4 @@
+/* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #ifdef __BORLANDC__
 unsigned short* VidMem = (unsigned short *) MK_FP(0xB800, 0x0000);
 #else

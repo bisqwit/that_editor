@@ -1,3 +1,4 @@
+/* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include <stdio.h>
 #include <time.h>
 #include <ctype.h>
