@@ -22,7 +22,7 @@ public:
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
-            if(Buf[0] == '=') ParseColorDeclaration(Buf+1, cc);
+            if(Buf[0] == '=') { colors_sorted=0; ParseColorDeclaration(Buf+1, cc); }
             else if(Buf[0] == ':')
             {
                 if(!colors_sorted)
@@ -124,19 +124,20 @@ private:
     struct table_item
     {
         char*  token;
-        struct state* state;
-        char*  state_name;
+        union
+        {
+            struct state* state;
+            char*  state_name;
+        };
 
-        inline void Construct() { token=0; state=0; state_name=0; }
-        inline void Construct(const table_item& b)
-            { token=b.token; state=b.state; state_name=b.state_name; }
+        inline void Construct() { token=0; state=0; }
+        inline void Construct(const table_item& b) { token=b.token; state=b.state; }
         inline void Destruct() { }
         inline void swap(table_item& b)
         {
             register char* t;
-            t = token; token=b.token; b.token=t;
+            t = token;      token     =b.token;      b.token     =t;
             t = state_name; state_name=b.state_name; b.state_name=t;
-            t = (char*)state; state=b.state; b.state=(struct state*)t;
         }
     };
     /* std::vector<table_item> without STL, for Borland C++ */
@@ -150,15 +151,19 @@ private:
 
     struct option
     {
-        struct state* state;
-        char*  state_name;
         TabType stringtable;
+        union
+        {
+            struct state* state;
+            char*  state_name;
+        };
         unsigned char recolor;
         unsigned noeat:  1;
         unsigned buffer: 1;
         unsigned strings:2; // 0=no strings, 1=strings, 2=istrings
+        unsigned name_mapped:1; // whether state(1) or state_name(0) is valid
     };
-    void ParseColorDeclaration(char* line, TabType& colortable)
+    inline void ParseColorDeclaration(char* line, TabType& colortable)
     {
         while(*line==' '||*line=='\t') ++line;
         char* namebegin = line;
@@ -167,7 +172,9 @@ private:
         while(*line==' '||*line=='\t') ++line;
         int attr = strtol(line, 0, 16);
         *nameend = '\0';
-        table_item tmp = { strdup(namebegin), (struct state*) attr, 0 };
+        table_item tmp;
+        tmp.token = strdup(namebegin);
+        tmp.state = (struct state*) attr;
         colortable.push_back(tmp);
     }
     inline void ParseStateStart(char* line, const TabType& colortable)
@@ -236,7 +243,8 @@ private:
         char* nameend   = line;
         while(*line == ' ' || *line == '\t') ++line;
         *nameend = '\0';
-        o->state_name = strdup(namebegin);
+        o->state_name  = strdup(namebegin);
+        o->name_mapped = 0;
         /*fprintf(stdout, "'%s' for these: ", o->state_name);
         for(unsigned c=0; c<256; ++c)
             if(states->options[c] == o)
@@ -284,7 +292,7 @@ private:
                 if(strcmp(line, "done") == 0) break;
                 if(*line == '"') ++line;
 
-                char* key_begin = line;
+                char* key_begin = line = strdup(line);
                 while(*line != '"' && *line != '\0') ++line;
                 char* key_end   = line;
                 if(*line == '"') ++line;
@@ -295,7 +303,9 @@ private:
                 while(*line != '\0') ++line;
                 /*unsigned char* value_end   = (unsigned char*) line;
                 *value_end++ = '\0';*/
-                table_item item = { strdup(key_begin), 0, strdup(value_begin) };
+                table_item item;
+                item.token      = key_begin;
+                item.state_name = value_begin;
                 o->stringtable.push_back(item);
             }
             sort(o->stringtable);
@@ -304,9 +314,7 @@ private:
     // Removes comments and trailing space from the buffer
     void cleanup(char* Buf)
     {
-        char* end = strchr(Buf, '\0');
-        char* begin = Buf;
-        char quote=0;
+        char quote=0, *begin = Buf, *end = strchr(Buf, '\0');
         for(; *begin; ++begin)
         {
             if(*begin == '#' && !quote)
@@ -371,36 +379,38 @@ private:
         TabType state_cache;
         {for(state* s = states; s; s = s->next)
         {
-            table_item tmp = { s->name, s, 0 };
+            table_item tmp;
+            tmp.token = s->name;
+            tmp.state = s;
             state_cache.push_back(tmp);
         }}
         sort(state_cache);
 
-        for(state* s = states; s; s = s->next)
+        // Translate state names to state pointers.
+        for(;;)
         {
             for(unsigned a=0; a<256; ++a)
             {
-                option* o = s->options[a];
-                if( ! o->state )
+                option* o = states->options[a];
+                if( ! o->name_mapped)
                 {
-                    o->state = findstate( state_cache, o->state_name );
-                    free(o->state_name);
-                    o->state_name = 0;
+                    char* name = o->state_name;
+                    o->state = findstate( state_cache, name );
+                    free(name);
+                    o->name_mapped = 1;
                     for(TabType::iterator e = o->stringtable.end(),
                         t = o->stringtable.begin();
                         t != e;
                         ++t)
                     {
-                        if( ! t->state )
-                        {
-                            t->state = findstate( state_cache, t->state_name );
-                            free( t->state_name );
-                            t->state_name = 0;
-            }   }   }   }
-        }
-        while(states && states->next)
-            states = states->next; // Get the first state as starting-point
-    }
+                        name = t->state_name;
+                        t->state = findstate( state_cache, name );
+                        // free(name); - was not separately allocated
+            }   }   }
+            if(!states->next) break;
+            // Get the first-inserted state (last in chain) as starting-point.
+            states = states->next;
+    }   }
 
     static cdecl int TableItemCompareForSort(const void * a, const void * b)
     {
