@@ -7,7 +7,7 @@ rem bcc -B -3 -ff -k- -w -w-sig -w-inl -P -d -a -O -mc -I../include -L../lib mai
 rem del e.exe
 rem main.exe e.exe
 
-bcc -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -Iinc main.cc
+bcc -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include main.cc
 tasm /D__COMPACT__ /D__CDECL__ /r/ml/m9 main.asm,main.obj
 tlink /3 /m /P=65536 /yx+ ..\lib\c0c.obj main.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
 

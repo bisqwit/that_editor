@@ -1546,6 +1546,7 @@ int main(int argc, char**argv)
                     // Autoindent only in insert mode
                     while(nspaces < EditLines[CurY].size()
                        && (EditLines[CurY][nspaces] & 0xFF) == ' ') ++nspaces;
+                    if(CurX < nspaces) nspaces = CurX;
                 }
                 WordVecType txtbuf(nspaces + 1, 0x0720);
                 txtbuf[0] = 0x070A; // newline
