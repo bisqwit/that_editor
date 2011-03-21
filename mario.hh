@@ -162,7 +162,6 @@ static unsigned OverlayMarioByte(
     return byte;
 }
 
-unsigned long MarioTimer = 0;
 void MarioTranslate(
     unsigned short* model,
     unsigned short* target,

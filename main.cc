@@ -1,5 +1,6 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 #include <ctype.h>
 
@@ -8,6 +9,9 @@
 #ifdef __BORLANDC__
 # include <dos.h> // for MK_FP
 # include <conio.h>
+
+volatile unsigned long MarioTimer = 0;
+
 #else
 # define cdecl
 static unsigned      kbhitptr   = 0;
@@ -250,6 +254,14 @@ void VisRenderStatus()
 
     time_t t = time(0);
     struct tm* tm = localtime(&t);
+    /*
+    static unsigned long begintime = *(unsigned long*)MK_FP(0x40,0x6C);
+    unsigned long nowtime          = *(unsigned long*)MK_FP(0x40,0x6C);
+    unsigned long time = (47*60+11) - 759 + (nowtime-begintime)*(65536.0/0x1234DC);
+    tm->tm_hour = 18;
+    tm->tm_min  = time/60;
+    tm->tm_sec  = time%60;
+    */
 
     int showfn = VidW > 60;
     char Buf1[80], Buf2[80];
@@ -324,6 +336,14 @@ void VisRenderStatus()
             if(StatusLine[p]) ++p;
         }}
     MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
+
+    if(0 && !kbhit())
+    {
+        /* Wait retrace */
+        /**/ _asm { mov dx, 0x3DA }
+        WR1: _asm { in al, dx; and al, 8; jnz WR1 }
+        WR2: _asm { in al, dx; and al, 8; jz WR2 }
+    }
 }
 void VisRender()
 {
@@ -378,6 +398,14 @@ void VisRender()
         }
     }
     VisSoftCursor(1);
+
+    if(0 && !kbhit())
+    {
+        /* Wait retrace */
+        /**/ _asm { mov dx, 0x3DA }
+        WR1: _asm { in al, dx; and al, 8; jnz WR1 }
+        WR2: _asm { in al, dx; and al, 8; jz WR2 }
+    }
 }
 
 unsigned wx = ~0u, wy = ~0u, cx = ~0u, cy = ~0u;
@@ -457,7 +485,11 @@ void WaitInput(int may_redraw = 1)
             VisRenderStatus();
             VisSoftCursor(0);
         #ifdef __BORLANDC__
-            _asm { hlt }
+            if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
+            || SyntaxCheckingNeeded == SyntaxChecking_DoingFull)
+            {
+                _asm { hlt }
+            }
         #endif
         } while(!kbhit());
     }
@@ -1115,6 +1147,25 @@ void InvokeLoad()
     RedoHead=RedoTail=0;
     UndoAppendOk=0;
 }
+void LineAskGo()
+{
+    unsigned DimY = VidH-1;
+    char* line = 0;
+    char Buf[64] = "";
+    //sprintf(Buf, "%u", CurY + 1);
+    int decision = PromptText("Goto line:", Buf, &line);
+    if(!decision || !line || !*line)
+    {
+        if(line) free(line);
+        return;
+    }
+    CurX = 0;
+    CurY = atoi(line) - 1;
+    WinY = (CurY > DimY/2) ? CurY - (DimY>>1) : 0;
+    WinX = 0;
+    VisRenderStatus();
+    VisRender();
+}
 
 int main(int argc, char**argv)
 {
@@ -1139,10 +1190,13 @@ int main(int argc, char**argv)
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
 #endif
 
+    unsigned long StatusLineProtection = 0;
+
     for(;;)
     {
         WaitInput();
         unsigned c = getch();
+
 #ifdef __BORLANDC__
         int shift = 3 & (*(char*)MK_FP(0x40,0x17));
 #else
@@ -1152,7 +1206,7 @@ int main(int argc, char**argv)
         int wasend   = CurX==BlockEndX && CurY==BlockEndY;
         unsigned WasX = CurX, WasY = CurY;
         int dragalong=0;
-        if(StatusLine[0])
+        if(StatusLine[0] && StatusLineProtection < MarioTimer)
         {
             StatusLine[0] = '\0';
             VisRender();
@@ -1199,8 +1253,14 @@ int main(int argc, char**argv)
                 TryUndo();
                 break;
             }
-            case CTRL('W'): if(WinY > 0) --WinY; break;
-            case CTRL('Z'): if(WinY+DimY < EditLines.size()) ++WinY; break;
+            case CTRL('W'):
+                if(WinY > 0) --WinY;
+                StatusLine[0] = 0;
+                break;
+            case CTRL('Z'):
+                if(WinY+DimY < EditLines.size()) ++WinY;
+                StatusLine[0] = 0;
+                break;
             case CTRL('K'):
             {
                 WaitingCtrl='K';
@@ -1284,6 +1344,11 @@ int main(int argc, char**argv)
                             charcode, charcode, charcode, charcode);
                         break;
                     }
+                    case 'l': case 'L': case CTRL('L'): // ask line number and goto
+                    {
+                        LineAskGo();
+                        break;
+                    }
                 }
                 break;
             }
@@ -1328,6 +1393,7 @@ int main(int argc, char**argv)
                             if(CurX == x) CurX = 0; else CurX = x; } while(0)
                     home:
                         k_home();
+                        WinX = 0;
                         if(shift) dragalong = 1;
                         break;
                     }
@@ -1338,6 +1404,7 @@ int main(int argc, char**argv)
                                 --CurX; /* past LF */ } while(0)
                     end:
                         k_end();
+                        WinX = 0;
                         if(shift) dragalong = 1;
                         break;
                     case 'K': // left
@@ -1469,10 +1536,13 @@ int main(int argc, char**argv)
                         VisRender();
                         if(C64palette)
                         {
-                            char res[8];
-                            sprintf(res, "%ux%u", VidW,VidH);
+                            long fpsval = VidFPS*1000.0 + 0.5;
+                            char res[64];
+                            sprintf(res, "%ux%u, %ld.%03ld fps", VidW,VidH, fpsval/1000, fpsval%1000);
                             sprintf(StatusLine, "READY%*s", VidW-5, res);
                         }
+                        VisRenderStatus();
+                        StatusLineProtection = MarioTimer + 100u;
                         break;
                     case 0x43: // F9
                         C64palette = !C64palette;
@@ -1483,8 +1553,9 @@ int main(int argc, char**argv)
                         DispUcase = !DispUcase;
                         if(C64palette)
                         {
-                            char res[8];
-                            sprintf(res, "%ux%u", VidW,VidH);
+                            long fpsval = VidFPS*1000.0 + 0.5;
+                            char res[64];
+                            sprintf(res, "%ux%u, %ld.%03ld fps", VidW,VidH, fpsval/1000, fpsval%1000);
                             sprintf(StatusLine, "READY%*s", VidW-5, res);
                         }
                         VisRender();
@@ -1551,6 +1622,7 @@ int main(int argc, char**argv)
                 WordVecType txtbuf(nspaces + 1, 0x0720);
                 txtbuf[0] = 0x070A; // newline
                 PerformEdit(CurX,CurY, InsertMode?0u:1u, txtbuf);
+                WinX = 0;
                 WasAppend = 1;
                 break;
             }
