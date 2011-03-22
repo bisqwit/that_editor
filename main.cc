@@ -13,135 +13,20 @@
 volatile unsigned long MarioTimer = 0;
 
 static unsigned char KbStatus = 0;
-/*
-static unsigned long KbDelayEnd = 0;
-static unsigned char KbPrev = 0, KbRepeats = 0;
-static enum KbDelayModes
-{
-    KbDelay_WaitingForKey, // no delay remaining, waiting for input
-    KbDelay_Delaying,      // input pending and determined, but we're delaying it
-    KbDelay_Ready,         // input pending and determined, and we're done delaying
-} KbDelayMode = KbDelay_WaitingForKey;
-*/
 static int MyKbhit()
 {
-    if(KbStatus) return 1;
-/*
-    switch(KbDelayMode)
+    if(!KbStatus)
     {
-        case KbDelay_Delaying:
-            if(MarioTimer < KbDelayEnd) return 0;
-            KbDelayMode = KbDelay_Ready;
-            //passthru
-
-        case KbDelay_Ready:
-            return 1;
-
-        case KbDelay_WaitingForKey:
-        {
-*/
-            _asm { mov ah, 0x01; int 0x16; jnz keyfound }
-            return 0;
-        keyfound:;
-/*
-            unsigned char r = _AL ? (_AL & 0x7F) : (_AH | 0x80);
-            KbDelayMode = KbDelay_Delaying;
-
-            if(r == KbPrev)
-            {
-                // repeating the previous key always happens at 40cps
-                if(KbRepeats < 2)
-                    KbDelayEnd = MarioTimer + 100U / 11u;
-                else
-                    KbDelayEnd = MarioTimer + 100U / 40u;
-                ++KbRepeats;
-            }
-            else
-            {
-                KbRepeats = 0;
-                switch(r)
-                {
-                    case 'A':case 'B':case 'C':case 'D':case 'E':case 'F':case 'G':case 'H':
-                    case 'I':case 'J':case 'K':case 'L':case 'M':case 'N':case 'O':case 'P':
-                    case 'Q':case 'R':case 'S':case 'T':case 'U':case 'V':case 'W':case 'X':
-                    case 'Y':case 'Z':case '0':case '1':case '2':case '3':case '4':
-                    case 'a':case 'b':case 'c':case 'd':case 'e':case 'f':case 'g':case 'h':
-                    case 'i':case 'j':case 'k':case 'l':case 'm':case 'n':case 'o':case 'p':
-                    case 'q':case 'r':case 's':case 't':case 'u':case 'v':case 'w':case 'x':
-                    case 'y':case 'z':case '5':case '6':case '7':case '8':case '9':
-                      { // random 5..60 cps, which makes 2..20 ticks
-                        static unsigned modifier = 5;
-                        modifier += (rand() % 3 - 1) * (rand() % 3 - 1);
-                        if(modifier < 1) modifier = 1;
-                        if(modifier >14) modifier = 14;
-                        unsigned ticks = ((3 + rand()%modifier)
-                                        + (0 + rand()%6)
-                                        + (0 + rand()%9)       ) / 3;
-                        KbDelayEnd = MarioTimer + ticks; break; }
-                    case CTRL('H'): case CTRL('I'):
-                    case CTRL('M'): case CTRL('J'):
-                    case CTRL('D'):
-                      { // some 40 cps for certain editing keys
-                        KbDelayEnd = MarioTimer + 100U/40u;
-                        if(r == 10) // after first F9
-                        {
-                            static unsigned f9count = 0;
-                            if(++f9count == 2)
-                                KbDelayEnd = MarioTimer + unsigned(100u*1.2);
-                        }
-                        break; }
-                    case CTRL('F'): case CTRL('B'):
-                    case CTRL('A'): case CTRL('E'):
-                    case CTRL('Z'): case CTRL('W'):
-                    case CTRL('Y'):
-                      { // certain other editing keys: 0.03 seconds
-                        KbDelayEnd = MarioTimer + unsigned(100U * 0.03); break; }
-                    case CTRL('K'):
-                      { // about 20..150ms, which makes 2..15 ticks at 100fps
-                        unsigned ticks = 2u + rand() % 15u;
-                        KbDelayEnd = MarioTimer + ticks; break; }
-                    case 'H'|0x80: case 'K'|0x80:
-                    case 'P'|0x80: case 'M'|0x80:
-                      { // arrow keys are usually slow, some 2 cps
-                        // except when preceded by ctrl-z
-                        if(KbPrev == CTRL('Z'))
-                            KbDelayEnd = MarioTimer + 100U / 50u;
-                        else
-                        {   // random 2..8 cps
-                            unsigned ticks = 100U / (2 + rand() % 7);
-                            KbDelayEnd = MarioTimer + ticks;
-                        }
-                        break; }
-                    default:
-                        if(r & 0x80)
-                        {
-                            // other special keys (F1 etc.) are quite fast, 10cps
-                            KbDelayEnd = MarioTimer + unsigned(100U * 0.1);
-                        }
-                        else
-                        {   // random 8..60 cps
-                            unsigned ticks = 100U / (8 + rand() % 51);
-                            KbDelayEnd = MarioTimer + ticks;
-                        }
-                        break;
-                }
-            }
-            KbPrev = r;
-            //KbDelayEnd = MarioTimer + 1+(KbDelayEnd-MarioTimer)/7;
-        }
-        default:
-            return 0;
+        _asm { mov ah, 0x01; int 0x16; jnz keyfound }
+        return 0;
     }
-*/
+keyfound:
     return 1;
 }
 static int MyGetch()
 {
     register unsigned char r = KbStatus;
     if(r) { KbStatus=0; return r; }
-/*
-    KbDelayMode = KbDelay_WaitingForKey;
-*/
     _asm { xor ax,ax; int 0x16 }
     if(_AL) return _AL;
     KbStatus    = _AH;
@@ -149,7 +34,6 @@ static int MyGetch()
 }
 #define kbhit MyKbhit
 #define getch MyGetch
-
 
 #else
 # define cdecl
