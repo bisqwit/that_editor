@@ -38,16 +38,18 @@ void VgaGetFont()
         default: mode = 1; break;
     }
 #ifdef __BORLANDC__
-    _asm { push es; push bp
-           mov ax, 0x1130
-           mov bh, mode
-           int 0x10
-           mov word ptr VgaFont+0, bp
-           mov word ptr VgaFont+2, es
-           xchg cx,cx
-           xchg dx,dx
-           pop bp
-           pop es }
+    _asm {
+        push es; push bp
+        mov ax, 0x1130
+        mov bh, mode
+        int 0x10
+        mov word ptr VgaFont+0, bp
+        mov word ptr VgaFont+2, es
+        xchg cx,cx
+        xchg dx,dx
+        pop bp
+        pop es
+    }
 #endif
 }
 
@@ -124,11 +126,33 @@ void VgaSetCustomMode(
     unsigned htotal = width*5/4;
     unsigned vtotal = vdispend+45;
 
-    // Set standard 80x25 mode as a baseline
-    // This triggers font reset on JAINPUT.
-    *(unsigned char*)MK_FP(0x40,0x87) |= 0x80; // tell BIOS to not clear VRAM
-    VgaSetMode(3);
-    *(unsigned char*)MK_FP(0x40,0x87) &= ~0x80;
+    //if(1)
+    {
+        void* emptyfont = malloc(8192);
+        memset(emptyfont, 0, 8192);
+        // Set an empty 32-pix font
+        _asm {
+            push es
+            push bp
+             les bp, emptyfont
+             mov ax, 0x1100
+             mov bx, 0x2000
+             mov cx, 256
+             mov dx, 0
+             int 0x10
+            pop bp
+            pop es
+        }
+        free(emptyfont);
+    }
+    if(font_height == 16)
+    {
+        // Set standard 80x25 mode as a baseline
+        // This triggers font reset on JAINPUT.
+        *(unsigned char*)MK_FP(0x40,0x87) |= 0x80; // tell BIOS to not clear VRAM
+        VgaSetMode(3);
+        *(unsigned char*)MK_FP(0x40,0x87) &= ~0x80;
+    }
 
     if(font_height ==14) { _asm { mov ax, 0x1101; mov bl, 0; int 0x10 } }
     if(font_height == 8) {
@@ -229,7 +253,7 @@ void VgaSetCustomMode(
     ver_overflow |= (line_compare & 0x400) >> 4;
     if(is_double) max_scanline |= 0x80;
     max_scanline |= font_height-1;
-    unsigned underline = vdispend == 350 ? 0x0F : 0x1F;
+    unsigned underline = 0x1F; //vdispend == 350 ? 0x0F : 0x1F;
     outport(0x3D4, 0x09 | (max_scanline << 8));
     outport(0x3D4, 0x14 | (underline << 8));
     outport(0x3D4, 0x07 | (overflow << 8));

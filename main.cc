@@ -1216,6 +1216,11 @@ void LineAskGo()
 
 int main(int argc, char**argv)
 {
+  #if 0
+    // Set mode (for dosbox recording)
+    VgaSetCustomMode(80,25,16,1,0,0);
+  #endif
+
 #ifdef __BORLANDC__
     InstallMario();
 #endif
