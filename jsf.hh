@@ -191,7 +191,7 @@ private:
         s->name = strdup(namebegin);
         {state* c = findstate(colortable, line);
         if(!c) { s->attr = 0x4A; fprintf(stdout,"Unknown color: '%s'\n", line); }
-        else   s->attr = (int) c;}
+        else   s->attr = (long) c;}
         s->next = states;
         states = s;
     }

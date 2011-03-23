@@ -2,6 +2,8 @@
 #ifndef bqtCharPtrVecHH
 #define bqtCharPtrVecHH
 
+/* Vector of vectors of unsigned char */
+
 #include "vec_c.hh"
 
 #define UsePlacementNew

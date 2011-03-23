@@ -2,6 +2,8 @@
 #ifndef bqtCharVecHH
 #define bqtCharVecHH
 
+/* Vector of unsigned char */
+
 #define T       unsigned char
 #define VecType CharVecType
 #include "vecbase.hh"

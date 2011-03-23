@@ -2,6 +2,8 @@
 #ifndef bqtWordVecHH
 #define bqtWordVecHH
 
+/* Vector of unsigned short */
+
 #define T       unsigned short
 #define VecType WordVecType
 #include "vecbase.hh"

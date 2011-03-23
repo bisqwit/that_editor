@@ -6,11 +6,11 @@
 
 #define CTRL(c) ((c) & 0x1F)
 
+volatile unsigned long MarioTimer = 0;
+
 #ifdef __BORLANDC__
 # include <dos.h> // for MK_FP
 # include <conio.h>
-
-volatile unsigned long MarioTimer = 0;
 
 static unsigned char KbStatus = 0;
 static int MyKbhit()
@@ -41,9 +41,13 @@ static unsigned      kbhitptr   = 0;
 static unsigned char kbhitbuf[] =
 {
     // simulated input for testing with valgrind
-    CTRL('K'), CTRL('V'), 8
+    CTRL('K'),'L', '1','0','0','0','\n',
+    CTRL('K'),'k',
+    CTRL('K'),'u',
+    CTRL('K'),'b',
+    CTRL('K'),'y'
 };
-# define kbhit() (kbhitptr < sizeof(kbhitbuf))
+# define kbhit() (kbhitptr < sizeof(kbhitbuf) && rand()%100 == 0)
 # define getch() kbhitbuf[kbhitptr++]
 # define strnicmp strncasecmp
 #endif
@@ -273,6 +277,7 @@ void VisSetCursor()
     unsigned cy = WinY > CurY ? 1 : CurY-WinY; ++cy; if(cy >= VidH) cy = VidH-1;
     VisPutCursorAt(cx,cy);
 }
+// Return just the filename part of pathfilename
 const char* fnpart(const char* fn)
 {
     if(!fn) return "[untitled]";
@@ -374,6 +379,7 @@ void VisRenderStatus()
         }}
     MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
 
+#ifdef __BORLANDC__
     if(0 && !kbhit())
     {
         /* Wait retrace */
@@ -381,6 +387,7 @@ void VisRenderStatus()
         WR1: _asm { in al, dx; and al, 8; jnz WR1 }
         WR2: _asm { in al, dx; and al, 8; jz WR2 }
     }
+#endif
 }
 void VisRender()
 {
@@ -436,6 +443,7 @@ void VisRender()
     }
     VisSoftCursor(1);
 
+#ifdef __BORLANDC__
     if(0 && !kbhit())
     {
         /* Wait retrace */
@@ -443,6 +451,7 @@ void VisRender()
         WR1: _asm { in al, dx; and al, 8; jnz WR1 }
         WR2: _asm { in al, dx; and al, 8; jz WR2 }
     }
+#endif
 }
 
 unsigned wx = ~0u, wy = ~0u, cx = ~0u, cy = ~0u;
@@ -1198,6 +1207,7 @@ void LineAskGo()
     }
     CurX = 0;
     CurY = atoi(line) - 1;
+    free(line);
     WinY = (CurY > DimY/2) ? CurY - (DimY>>1) : 0;
     WinX = 0;
     VisRenderStatus();

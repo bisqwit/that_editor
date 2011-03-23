@@ -2,6 +2,8 @@
 #ifndef bqtWordPtrVecHH
 #define bqtWordPtrVecHH
 
+/* Vector of vectors of unsigned short */
+
 #include "vec_s.hh"
 
 #define UsePlacementNew

@@ -126,7 +126,7 @@ void VgaSetCustomMode(
 
     // Set standard 80x25 mode as a baseline
     // This triggers font reset on JAINPUT.
-    *(unsigned char*)MK_FP(0x40,0x87) |= 0x80;
+    *(unsigned char*)MK_FP(0x40,0x87) |= 0x80; // tell BIOS to not clear VRAM
     VgaSetMode(3);
     *(unsigned char*)MK_FP(0x40,0x87) &= ~0x80;
 
