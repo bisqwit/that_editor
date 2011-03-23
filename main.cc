@@ -1525,8 +1525,18 @@ int main(int argc, char**argv)
                         goto newmode; // F6
                     case 0x59: shiftF6:
                                dblw = !dblw; goto newmode; // shift-F6
-                    case 0x41: dblh = !dblh; goto newmode; // F7
-                    case 0x5A: dblh = !dblh; goto newmode; // shift-F7
+                    case 0x41: if(shift) goto shiftF7;
+                        if(dblh) { dblh=0; if(VidCellHeight==8 || VidCellHeight==16)
+                                               VidCellHeight *= 2;
+                                           else
+                                               VidH*=2; }
+                        else    { dblh=1; if(VidCellHeight==16 || (VidCellHeight==32 && !FatMode))
+                                               VidCellHeight /= 2;
+                                           else
+                                               VidH/=2; }
+                        goto newmode; // F7
+                    case 0x5A: shiftF7:
+                               dblh = !dblh; goto newmode; // shift-F7
                     case 0x5B: // shift-F8
                     case 0x42: // F8
                     askmode:
