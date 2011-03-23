@@ -54,19 +54,32 @@
 # sometimes have to make dummy states with '* next-state noeat' just to get
 # a color specification.
 
-
 # Define no. sync lines
 # You can say:
 # -200     means 200 lines
 # -        means always start parsing from beginning of file when we lose sync
 #          if nothing is specified, the default is -50
+# THIS SETTING IS IGNORED BY Ad-hoc programming editor for DOSBox.
+-3000
+
 
 # Define colors
 #
-# bold inverse blink dim underline
+# Colors 
 # white cyan magenta blue yellow green red black
 # bg_white bg_cyan bg_magenta bg_blue bg_yellow bg_green bg_red bg_black
--3000
+# THIS SETTING IS DIFFERENT IN Ad-hoc programming editor for DOSBox.
+# OUR COLORS ARE 8-BIT HEXADECIMAL NUMBERS:
+#   IRGBirgb
+#   \\\\\\\\_bit 0: blue for foreground
+#    \\\\\\\_bit 1: green for foreground
+#     \\\\\\_bit 2: red for foreground
+#      \\\\\_bit 3: intensity bit for foreground
+#       \\\\_bit 4: blue for background
+#        \\\_bit 5: green for background
+#         \\_bit 6: red for background
+#          \_bit 7: intensity bit for background
+# For example, 03 = black background, cyan foreground.
 
 # Blank characters are outputted in this colour
 =Background	07

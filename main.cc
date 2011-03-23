@@ -147,12 +147,17 @@ struct ApplyEngine: public JSF::Applier
     int finished;
     unsigned nlinestotal, nlines;
     size_t x,y, begin_line;
+    unsigned pending_recolor, pending_attr;
     ApplyEngine()
         { Reset(0); }
     void Reset(size_t line)
-        { x=0; y=begin_line=line; finished=0; nlinestotal=nlines=0; }
+        { x=0; y=begin_line=line; finished=0; nlinestotal=nlines=0;
+          pending_recolor=0;
+          pending_attr   =0;
+        }
     virtual cdecl int Get(void)
     {
+        FlushColor();
         if(y >= EditLines.size() || EditLines[y].empty())
         {
             finished = 1;
@@ -175,7 +180,15 @@ struct ApplyEngine: public JSF::Applier
     }
     virtual cdecl void Recolor(register unsigned n, register unsigned attr)
     {
-        attr <<= 8;
+        if(n < pending_recolor) FlushColor();
+        pending_recolor = n;
+        pending_attr    = attr << 8;
+    }
+private:
+    void FlushColor()
+    {
+        register unsigned n    = pending_recolor;
+        register unsigned attr = pending_attr;
         //fprintf(stdout, "Recolors %u as %02X\n", n, attr);
         size_t px=x, py=y;
         for(; n > 0; --n)
@@ -185,6 +198,7 @@ struct ApplyEngine: public JSF::Applier
             unsigned short&w = EditLines[py][px];
             w = (w & 0xFF) | attr;
         }
+        pending_recolor = 0;
     }
 };
 
