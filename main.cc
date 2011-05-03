@@ -65,15 +65,24 @@ char StatusLine[256] =
 
 WordPtrVecType EditLines;
 
+struct Anchor
+{
+    size_t x, y;
+    Anchor() : x(0), y(0) { }
+};
+
 JSF     Syntax;
-size_t  WinX, WinY;
-size_t  CurX, CurY;
 
-size_t BlockBeginX=0, BlockBeginY=0;
-size_t BlockEndX=0,   BlockEndY=0;
+enum { MaxSavedCursors = 4, NumCursors = MaxSavedCursors + 2 };
 
-int     InsertMode=1, WaitingCtrl=0;
+Anchor Win, SavedCursors[NumCursors];
+
+int     InsertMode=1, WaitingCtrl=0, CurrentCursor=0;
 unsigned TabSize  =4;
+
+#define Cur        SavedCursors[CurrentCursor]
+#define BlockBegin SavedCursors[MaxSavedCursors  ]
+#define BlockEnd   SavedCursors[MaxSavedCursors+1]
 
 int UnsavedChanges = 0;
 char* CurrentFileName = 0;
@@ -128,14 +137,12 @@ void FileLoad(char* fn)
         editline.clear();
     }
     fclose(fp);
-    WinX = WinY = 0;
-    CurX = CurY = 0;
+    Win = Cur = Anchor();
     UnsavedChanges = 0;
 }
 void FileNew()
 {
-    WinX = WinY = 0;
-    CurX = CurY = 0;
+    Win = Cur = Anchor();
     EditLines.clear();
     WordVecType emptyline;
     emptyline.push_back('\n' | UnknownColor);
@@ -173,7 +180,7 @@ struct ApplyEngine: public JSF::Applier
             if(kbhit()) return -1;
             ++nlines;
             if(nlines >= VidH) { nlines=0; return -1; }
-            if(nlinestotal > WinY + VidH && nlines >= 4)
+            if(nlinestotal > Win.y + VidH && nlines >= 4)
                 { nlines=0; return -1; }
             ++nlinestotal;
         }
@@ -273,8 +280,8 @@ void VisPutCursorAt(unsigned cx,unsigned cy)
 }
 void VisSetCursor()
 {
-    unsigned cx = WinX > CurX ? 0 : CurX-WinX;       if(cx >= VidW) cx = VidW-1;
-    unsigned cy = WinY > CurY ? 1 : CurY-WinY; ++cy; if(cy >= VidH) cy = VidH-1;
+    unsigned cx = Win.x > Cur.x ? 0 : Cur.x-Win.x;       if(cx >= VidW) cx = VidW-1;
+    unsigned cy = Win.y > Cur.y ? 1 : Cur.y-Win.y; ++cy; if(cy >= VidH) cy = VidH-1;
     VisPutCursorAt(cx,cy);
 }
 // Return just the filename part of pathfilename
@@ -310,9 +317,9 @@ void VisRenderStatus()
     sprintf(Buf1, "%s%sRow %-5u/%u Col %-5u",
         showfn ? fnpart(CurrentFileName) : "",
         showfn ? " " : "",
-        (unsigned) (CurY+1),
+        (unsigned) (Cur.y+1),
         (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
-        (unsigned) (CurX+1));
+        (unsigned) (Cur.x+1));
     sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
     unsigned x1a = VidW*12/70;
     unsigned x2a = VidW*55/70;
@@ -402,12 +409,12 @@ void VisRender()
     {
         unsigned short* Tgt = GetVidMem(0, y+1);
 
-        unsigned ly = WinY + y;
+        unsigned ly = Win.y + y;
 
         WordVecType* line = &EmptyLine;
         if(ly < EditLines.size()) line = &EditLines[ly];
 
-        unsigned lw = line->size(), lx=0, x=WinX, xl=x + VidW;
+        unsigned lw = line->size(), lx=0, x=Win.x, xl=x + VidW;
         unsigned trail = 0x0720;
         for(unsigned l=0; l<lw; ++l)
         {
@@ -416,10 +423,10 @@ void VisRender()
             ++lx;
             if(lx > x)
             {
-                if( ((ly == BlockBeginY && lx-1 >= BlockBeginX)
-                  || ly > BlockBeginY)
-                &&  ((ly == BlockEndY && lx-1 < BlockEndX)
-                  || ly < BlockEndY) )
+                if( ((ly == BlockBegin.y && lx-1 >= BlockBegin.x)
+                  || ly > BlockBegin.y)
+                &&  ((ly == BlockEnd.y && lx-1 < BlockEnd.x)
+                  || ly < BlockEnd.y) )
                 {
                     attr = (attr & 0xFFu)
                          | ((attr >> 4u) & 0xF00u)
@@ -470,17 +477,17 @@ void WaitInput(int may_redraw = 1)
 {
     if(may_redraw)
     {
-        if(cx != CurX || cy != CurY) { cx=CurX; cy=CurY; VisSoftCursor(-1); VisSetCursor(); }
-        if(StatusLine[0] && CurY >= WinY+VidH-2) WinY += 2;
+        if(cx != Cur.x || cy != Cur.y) { cx=Cur.x; cy=Cur.y; VisSoftCursor(-1); VisSetCursor(); }
+        if(StatusLine[0] && Cur.y >= Win.y+VidH-2) Win.y += 2;
     }
 
     if(!kbhit())
     {
-        while(CurX < WinX) WinX -= 8;
-        while(CurX >= WinX + VidW) WinX += 8;
+        while(Cur.x < Win.x) Win.x -= 8;
+        while(Cur.x >= Win.x + VidW) Win.x += 8;
         if(may_redraw)
         {
-            if(wx != WinX || wy != WinY)
+            if(wx != Win.x || wy != Win.y)
             {
                 VisSoftCursor(-1);
                 VisSetCursor();
@@ -506,9 +513,9 @@ void WaitInput(int may_redraw = 1)
                         unsigned line = 0;
 
                         if( horrible_sight)
-                            line = WinY;
+                            line = Win.y;
                         else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
-                            line = WinY>40 ? WinY-40 : 0;
+                            line = Win.y>40 ? Win.y-40 : 0;
 
                         Syntax.ApplyInit(SyntaxCheckingState);
                         SyntaxCheckingApplier.Reset(line);
@@ -522,11 +529,11 @@ void WaitInput(int may_redraw = 1)
                             ? SyntaxChecking_IsPerfect
                             : SyntaxChecking_DoingFull;
 
-                    wx=WinX; wy=WinY;
+                    wx=Win.x; wy=Win.y;
                     VisRender();
                 }
-                if(wx != WinX || wy != WinY)
-                    { wx=WinX; wy=WinY; VisRender(); }
+                if(wx != Win.x || wy != Win.y)
+                    { wx=Win.x; wy=Win.y; VisRender(); }
             }
             VisRenderStatus();
             VisSoftCursor(0);
@@ -588,6 +595,12 @@ void AddRedo(const UndoEvent& event)
     RedoHead = (RedoHead + 1) % MaxUndo;
 }
 
+#define AllCursors() \
+    do { int cn; \
+         for(cn=0; cn<NumCursors; ++cn) \
+             { Anchor& c = SavedCursors[cn]; o(); } \
+    } while(0)
+
 void PerformEdit(
     unsigned x, unsigned y,
     unsigned n_delete,
@@ -625,18 +638,19 @@ void PerformEdit(
            && y+1+n_lines_deleted < EditLines.size())
         {
             ++n_lines_deleted;
-            if(BlockBeginY == y+n_lines_deleted) { BlockBeginY = y; BlockBeginX += EditLines[y].size(); }
-            if(BlockEndY == y+n_lines_deleted) { BlockEndY = y; BlockEndX += EditLines[y].size(); }
-            if(CurY == y+n_lines_deleted) { CurY = y; CurX += EditLines[y].size(); }
+            #define o()  if(c.y == y+n_lines_deleted) { c.y = y; c.x += EditLines[y].size(); }
+            AllCursors();
+            #undef o
+
             EditLines[y].insert( EditLines[y].end(),
                 EditLines[y+n_lines_deleted].begin(),
                 EditLines[y+n_lines_deleted].end() );
         }
         if(n_lines_deleted > 0)
         {
-            if(BlockBeginY > y) BlockBeginY -= n_lines_deleted;
-            if(BlockEndY > y)   BlockEndY -= n_lines_deleted;
-            if(CurY > y) CurY -= n_lines_deleted;
+            #define o() if(c.y > y) c.y -= n_lines_deleted
+            AllCursors();
+            #undef o
             EditLines.erase(EditLines.begin()+y+1,
                             EditLines.begin()+y+1+n_lines_deleted);
         }
@@ -649,12 +663,10 @@ void PerformEdit(
         EditLines[y].erase(
             EditLines[y].begin() + x,
             EditLines[y].begin() + x + n_delete);
-        if(BlockBeginY == y && BlockBeginX > x+n_delete) BlockBeginX -= n_delete;
-        else if(BlockBeginY == y && BlockBeginX > x) BlockBeginX = x;
-        if(BlockEndY == y && BlockEndX > x+n_delete) BlockEndX -= n_delete;
-        else if(BlockEndY == y && BlockEndX > x) BlockEndX = x;
-        if(CurY == y && CurX > x+n_delete) CurX -= n_delete;
-        else if(CurY == y && CurX > x) CurX = x;
+        #define o() if(c.y == y && c.x > x+n_delete) c.x -= n_delete; \
+               else if(c.y == y && c.x > x) c.x = x
+        AllCursors();
+        #undef o
     }
     // Next, check if there is something to insert
     if(!insert_chars.empty())
@@ -683,12 +695,10 @@ void PerformEdit(
                 new_lines.begin(),
                 new_lines.end() );
             // Update cursors
-            if(BlockBeginY == y && BlockBeginX >= x) { BlockBeginY += insert_newline_count; BlockBeginX -= x;  }
-            else if(BlockBeginY > y) { BlockBeginY += insert_newline_count; }
-            if(BlockEndY == y && BlockEndX >= x) { BlockEndY += insert_newline_count; BlockEndX -= x;  }
-            else if(BlockEndY > y) { BlockEndY += insert_newline_count; }
-            if(CurY == y && CurX >= x) { CurY += insert_newline_count; CurX -= x;  }
-            else if(CurY > y) { CurY += insert_newline_count; }
+            #define o() if(c.y == y && c.x >= x) { c.y += insert_newline_count; c.x -= x; } \
+                   else if(c.y > y) { c.y += insert_newline_count; }
+            AllCursors();
+            #undef o
         }
         unsigned insert_beginpos = 0;
         while(insert_beginpos < insert_length)
@@ -706,9 +716,9 @@ void PerformEdit(
                     EditLines[y].begin() + x,
                     insert_chars.begin() + insert_beginpos,
                     insert_chars.begin() + p );
-                if(BlockBeginY == y && BlockBeginX >= x) BlockBeginX += n_inserted;
-                if(BlockEndY == y && BlockEndX >= x) BlockEndX += n_inserted;
-                if(CurY == y && CurX >= x) CurX += n_inserted;
+                #define o() if(c.y == y && c.x >= x) c.x += n_inserted
+                AllCursors();
+                #undef o
                 x += n_inserted;
                 insert_beginpos = p;
             }
@@ -755,8 +765,8 @@ void TryRedo()
 
 void BlockIndent(int offset)
 {
-    unsigned firsty = BlockBeginY, lasty = BlockEndY;
-    if(BlockEndX == 0) lasty -= 1;
+    unsigned firsty = BlockBegin.y, lasty = BlockEnd.y;
+    if(BlockEnd.x == 0) lasty -= 1;
 
     unsigned min_indent = 0x7FFF, max_indent = 0;
     for(unsigned y=firsty; y<=lasty; ++y)
@@ -779,8 +789,8 @@ void BlockIndent(int offset)
             if((EditLines[y][indent] & 0xFF) == '\n') continue;
             PerformEdit(0u,y, 0u, indentbuf);
         }
-        if(BlockBeginX > 0) BlockBeginX += offset;
-        if(BlockEndX   > 0) BlockEndX   += offset;
+        if(BlockBegin.x > 0) BlockBegin.x += offset;
+        if(BlockEnd.x   > 0) BlockEnd.x   += offset;
     }
     else if(min_indent >= -offset)
     {
@@ -795,19 +805,19 @@ void BlockIndent(int offset)
             if(indent < outdent) continue;
             PerformEdit(0u,y, outdent, empty);
         }
-        if(BlockBeginX >= outdent) BlockBeginX -= outdent;
-        if(BlockEndX   >= outdent) BlockEndX   -= outdent;
+        if(BlockBegin.x >= outdent) BlockBegin.x -= outdent;
+        if(BlockEnd.x   >= outdent) BlockEnd.x   -= outdent;
     }
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
 }
 
 void GetBlock(WordVecType& block)
 {
-    for(unsigned y=BlockBeginY; y<=BlockEndY; ++y)
+    for(unsigned y=BlockBegin.y; y<=BlockEnd.y; ++y)
     {
         unsigned x0 = 0, x1 = EditLines[y].size();
-        if(y == BlockBeginY) x0 = BlockBeginX;
-        if(y == BlockEndY)   x1 = BlockEndX;
+        if(y == BlockBegin.y) x0 = BlockBegin.x;
+        if(y == BlockEnd.y)   x1 = BlockEnd.x;
         block.insert(block.end(),
             EditLines[y].begin() + x0,
             EditLines[y].begin() + x1);
@@ -818,8 +828,8 @@ void FindPair()
 {
     int           PairDir  = 0;
     unsigned char PairChar = 0;
-    unsigned char PairColor = EditLines[CurY][CurX] >> 8;
-    switch(EditLines[CurY][CurX] & 0xFF)
+    unsigned char PairColor = EditLines[Cur.y][Cur.x] >> 8;
+    switch(EditLines[Cur.y][Cur.x] & 0xFF)
     {
         case '{': PairChar = '}'; PairDir = 1; break;
         case '[': PairChar = ']'; PairDir = 1; break;
@@ -830,7 +840,7 @@ void FindPair()
     }
     if(!PairDir) return;
     int balance = 0;
-    unsigned testx = CurX, testy = CurY;
+    unsigned testx = Cur.x, testy = Cur.y;
     if(PairDir > 0)
         for(;;)
         {
@@ -838,7 +848,7 @@ void FindPair()
                 { testx=0; ++testy; if(testy >= EditLines.size()) return; }
             if((EditLines[testy][testx] >> 8) != PairColor) continue;
             unsigned char c = EditLines[testy][testx] & 0xFF;
-            if(balance == 0 && c == PairChar) { CurX = testx; CurY = testy; return; }
+            if(balance == 0 && c == PairChar) { Cur.x = testx; Cur.y = testy; return; }
             if(c == '{' || c == '[' || c == '(') ++balance;
             if(c == '}' || c == ']' || c == ')') --balance;
         }
@@ -851,7 +861,7 @@ void FindPair()
                 --testx;
             if((EditLines[testy][testx] >> 8) != PairColor) continue;
             unsigned char c = EditLines[testy][testx] & 0xFF;
-            if(balance == 0 && c == PairChar) { CurX = testx; CurY = testy; return; }
+            if(balance == 0 && c == PairChar) { Cur.x = testx; Cur.y = testy; return; }
             if(c == '{' || c == '[' || c == '(') ++balance;
             if(c == '}' || c == ']' || c == ')') --balance;
         }
@@ -1198,18 +1208,18 @@ void LineAskGo()
     unsigned DimY = VidH-1;
     char* line = 0;
     char Buf[64] = "";
-    //sprintf(Buf, "%u", CurY + 1);
+    //sprintf(Buf, "%u", Cur.y + 1);
     int decision = PromptText("Goto line:", Buf, &line);
     if(!decision || !line || !*line)
     {
         if(line) free(line);
         return;
     }
-    CurX = 0;
-    CurY = atoi(line) - 1;
+    Cur.x = 0;
+    Cur.y = atoi(line) - 1;
     free(line);
-    WinY = (CurY > DimY/2) ? CurY - (DimY>>1) : 0;
-    WinX = 0;
+    Win.y = (Cur.y > DimY/2) ? Cur.y - (DimY>>1) : 0;
+    Win.x = 0;
     VisRenderStatus();
     VisRender();
 }
@@ -1249,9 +1259,9 @@ int main(int argc, char**argv)
 #else
         int shift = 0;
 #endif
-        int wasbegin = CurX==BlockBeginX && CurY==BlockBeginY;
-        int wasend   = CurX==BlockEndX && CurY==BlockEndY;
-        unsigned WasX = CurX, WasY = CurY;
+        int wasbegin = Cur.x==BlockBegin.x && Cur.y==BlockBegin.y;
+        int wasend   = Cur.x==BlockEnd.x && Cur.y==BlockEnd.y;
+        unsigned WasX = Cur.x, WasY = Cur.y;
         int dragalong=0;
         if(StatusLine[0] && StatusLineProtection < MarioTimer)
         {
@@ -1265,21 +1275,21 @@ int main(int argc, char**argv)
             case CTRL('V'): // ctrl-V
             {
             pgdn:;
-                unsigned offset = CurY-WinY;
-                CurY += DimY;
-                if(CurY >= EditLines.size()) CurY = EditLines.size()-1;
-                WinY = (CurY > offset) ? CurY-offset : 0;
-                if(WinY + DimY > EditLines.size()
-                && EditLines.size() > DimY) WinY = EditLines.size()-DimY;
+                unsigned offset = Cur.y-Win.y;
+                Cur.y += DimY;
+                if(Cur.y >= EditLines.size()) Cur.y = EditLines.size()-1;
+                Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
+                if(Win.y + DimY > EditLines.size()
+                && EditLines.size() > DimY) Win.y = EditLines.size()-DimY;
                 if(shift) dragalong = 1;
                 break;
             }
             case CTRL('U'): // ctrl-U
             {
             pgup:;
-                unsigned offset = CurY - WinY;
-                if(CurY > DimY) CurY -= DimY; else CurY = 0;
-                WinY = (CurY > offset) ? CurY-offset : 0;
+                unsigned offset = Cur.y - Win.y;
+                if(Cur.y > DimY) Cur.y -= DimY; else Cur.y = 0;
+                Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
                 if(shift) dragalong = 1;
                 break;
             }
@@ -1301,11 +1311,11 @@ int main(int argc, char**argv)
                 break;
             }
             case CTRL('W'):
-                if(WinY > 0) --WinY;
+                if(Win.y > 0) --Win.y;
                 StatusLine[0] = 0;
                 break;
             case CTRL('Z'):
-                if(WinY+DimY < EditLines.size()) ++WinY;
+                if(Win.y+DimY < EditLines.size()) ++Win.y;
                 StatusLine[0] = 0;
                 break;
             case CTRL('K'):
@@ -1316,42 +1326,42 @@ int main(int argc, char**argv)
                 switch(getch())
                 {
                     case 'b': case 'B': case CTRL('B'): // mark begin
-                        BlockBeginX = CurX; BlockBeginY = CurY;
+                        BlockBegin.x = Cur.x; BlockBegin.y = Cur.y;
                         VisRender();
                         break;
                     case 'k': case 'K': case CTRL('K'): // mark end
-                        BlockEndX = CurX; BlockEndY = CurY;
+                        BlockEnd.x = Cur.x; BlockEnd.y = Cur.y;
                         VisRender();
                         break;
                     case 'm': case 'M': case CTRL('M'): // move block
                     {
                         WordVecType block, empty;
                         GetBlock(block);
-                        PerformEdit(BlockBeginX,BlockBeginY, block.size(), empty);
-                        // Note: ^ Assumes CurX,CurY get updated here.
-                        BlockEndX = CurX; BlockEndY = CurY;
-                        unsigned x = CurX, y = CurY;
-                        PerformEdit(CurX,CurY, InsertMode?0u:block.size(), block);
-                        BlockBeginX = x; BlockBeginY = y;
+                        PerformEdit(BlockBegin.x,BlockBegin.y, block.size(), empty);
+                        // Note: ^ Assumes Cur.x,Cur.y get updated here.
+                        BlockEnd.x = Cur.x; BlockEnd.y = Cur.y;
+                        unsigned x = Cur.x, y = Cur.y;
+                        PerformEdit(Cur.x,Cur.y, InsertMode?0u:block.size(), block);
+                        BlockBegin.x = x; BlockBegin.y = y;
                         break;
                     }
                     case 'c': case 'C': case CTRL('C'): // paste block
                     {
                         WordVecType block;
                         GetBlock(block);
-                        BlockEndX = CurX; BlockEndY = CurY;
-                        unsigned x = CurX, y = CurY;
-                        PerformEdit(CurX,CurY, InsertMode?0u:block.size(), block);
-                        BlockBeginX = x; BlockBeginY = y;
+                        BlockEnd.x = Cur.x; BlockEnd.y = Cur.y;
+                        unsigned x = Cur.x, y = Cur.y;
+                        PerformEdit(Cur.x,Cur.y, InsertMode?0u:block.size(), block);
+                        BlockBegin.x = x; BlockBegin.y = y;
                         break;
                     }
                     case 'y': case 'Y': case CTRL('Y'): // delete block
                     {
                         WordVecType block, empty;
                         GetBlock(block);
-                        PerformEdit(BlockBeginX,BlockBeginY, block.size(), empty);
-                        BlockEndX = BlockBeginX;
-                        BlockEndY = BlockEndY;
+                        PerformEdit(BlockBegin.x,BlockBegin.y, block.size(), empty);
+                        BlockEnd.x = BlockBegin.x;
+                        BlockEnd.y = BlockEnd.y;
                         break;
                     }
                     case 'd': case 'D': case CTRL('D'): // save file
@@ -1383,7 +1393,7 @@ int main(int argc, char**argv)
                         break;
                     case ' ': // info about current character
                     {
-                        unsigned charcode = EditLines[CurY][CurX] & 0xFF;
+                        unsigned charcode = EditLines[Cur.y][Cur.x] & 0xFF;
                         sprintf(StatusLine,
                             VidW >= 60
                             ? "Character '%c': hex=%02X, decimal=%d, octal=%03o"
@@ -1413,8 +1423,8 @@ int main(int argc, char**argv)
                 break;
             case CTRL('G'):
                 FindPair();
-                if(CurY < WinY || CurY >= WinY+DimY)
-                    WinY = CurY > DimY/2 ? CurY - DimY/2 : 0;
+                if(Cur.y < Win.y || Cur.y >= Win.y+DimY)
+                    Win.y = Cur.y > DimY/2 ? Cur.y - DimY/2 : 0;
                 break;
             case CTRL('T'): goto askmode;
             case 0:;
@@ -1422,45 +1432,45 @@ int main(int argc, char**argv)
                 switch(getch())
                 {
                     case 'H': // up
-                        if(CurY > 0) --CurY;
-                        if(CurY < WinY) WinY = CurY;
+                        if(Cur.y > 0) --Cur.y;
+                        if(Cur.y < Win.y) Win.y = Cur.y;
                         if(shift) dragalong = 1;
                         break;
                     case 'P': // down
-                        if(CurY+1 < EditLines.size()) ++CurY;
-                        if(CurY >= WinY+DimY) WinY = CurY - DimY+1;
+                        if(Cur.y+1 < EditLines.size()) ++Cur.y;
+                        if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
                         if(shift) dragalong = 1;
                         break;
                     case 0x47: // home
                     {
                         #define k_home() do { \
                             unsigned x = 0; \
-                            while(x < EditLines[CurY].size() \
-                               && (EditLines[CurY][x] & 0xFF) == ' ') ++x; \
-                            if(CurX == x) CurX = 0; else CurX = x; } while(0)
+                            while(x < EditLines[Cur.y].size() \
+                               && (EditLines[Cur.y][x] & 0xFF) == ' ') ++x; \
+                            if(Cur.x == x) Cur.x = 0; else Cur.x = x; } while(0)
                     home:
                         k_home();
-                        WinX = 0;
+                        Win.x = 0;
                         if(shift) dragalong = 1;
                         break;
                     }
                     case 0x4F: // end
                         #define k_end() do { \
-                            CurX = EditLines[CurY].size(); \
-                            if(CurX > 0 && (EditLines[CurY].back() & 0xFF) == '\n') \
-                                --CurX; /* past LF */ } while(0)
+                            Cur.x = EditLines[Cur.y].size(); \
+                            if(Cur.x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n') \
+                                --Cur.x; /* past LF */ } while(0)
                     end:
                         k_end();
-                        WinX = 0;
+                        Win.x = 0;
                         if(shift) dragalong = 1;
                         break;
                     case 'K': // left
                     {
                         #define k_left() do { \
-                            if(CurX > EditLines[CurY].size()) \
-                                CurX = EditLines[CurY].size()-1; \
-                            else if(CurX > 0) --CurX; \
-                            else if(CurY > 0) { --CurY; k_end(); } } while(0)
+                            if(Cur.x > EditLines[Cur.y].size()) \
+                                Cur.x = EditLines[Cur.y].size()-1; \
+                            else if(Cur.x > 0) --Cur.x; \
+                            else if(Cur.y > 0) { --Cur.y; k_end(); } } while(0)
                     lt_key:
                         k_left();
                         if(shift) dragalong = 1;
@@ -1469,10 +1479,10 @@ int main(int argc, char**argv)
                     case 'M': // right
                     {
                         #define k_right() do { \
-                            if(CurX+1 < EditLines[CurY].size()) \
-                                ++CurX; \
-                            else if(CurY+1 < EditLines.size()) \
-                                { CurX = 0; ++CurY; } } while(0)
+                            if(Cur.x+1 < EditLines[Cur.y].size()) \
+                                ++Cur.x; \
+                            else if(Cur.y+1 < EditLines.size()) \
+                                { Cur.x = 0; ++Cur.y; } } while(0)
                     rt_key:
                         k_right();
                         if(shift) dragalong = 1;
@@ -1482,22 +1492,22 @@ int main(int argc, char**argv)
                     {
                         k_left();
                         do k_left();
-                        while( (CurX > 0 || CurY > 0)
-                            && isalnum(EditLines[CurY][CurX]&0xFF));
+                        while( (Cur.x > 0 || Cur.y > 0)
+                            && isalnum(EditLines[Cur.y][Cur.x]&0xFF));
                         k_right();
                         if(shift) dragalong = 1;
                         break;
                     }
                     case 0x74: // ctrl-right (go right on word boundary)
                     {
-                        while( CurY < EditLines.size()
-                            && CurX < EditLines[CurY].size()
-                            && isalnum(EditLines[CurY][CurX]&0xFF) )
+                        while( Cur.y < EditLines.size()
+                            && Cur.x < EditLines[Cur.y].size()
+                            && isalnum(EditLines[Cur.y][Cur.x]&0xFF) )
                             k_right();
                         do k_right();
-                        while( CurY < EditLines.size()
-                            && CurX < EditLines[CurY].size()
-                            && !isalnum(EditLines[CurY][CurX]&0xFF) );
+                        while( Cur.y < EditLines.size()
+                            && Cur.x < EditLines[Cur.y].size()
+                            && !isalnum(EditLines[Cur.y][Cur.x]&0xFF) );
                         if(shift) dragalong = 1;
                         break;
                     }
@@ -1509,32 +1519,32 @@ int main(int argc, char**argv)
                         break;
                     case 0x84: // ctrl-pgup = goto beginning of file
                     ctrlpgup:
-                        CurY = WinY = 0;
-                        CurX = WinX = 0;
+                        Cur.y = Win.y = 0;
+                        Cur.x = Win.x = 0;
                         if(shift) dragalong = 1;
                         break;
                     case 0x76: // ctrl-pgdn = goto end of file
                     ctrlpgdn:
-                        CurY = EditLines.size()-1;
-                        WinY = 0;
-                        if(CurY >= WinY+DimY) WinY = CurY - DimY+1;
+                        Cur.y = EditLines.size()-1;
+                        Win.y = 0;
+                        if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
                         goto end;
                     case 0x77: // ctrl-home = goto beginning of window (vertically)
-                        CurY = WinY;
+                        Cur.y = Win.y;
                         if(shift) dragalong = 1;
                         break;
                     case 0x75: // ctrl-end = goto end of window (vertically)
-                        CurY = WinY + VidH-1;
+                        Cur.y = Win.y + VidH-1;
                         if(shift) dragalong = 1;
                         break;
                     case 0x53: // delete
                     delkey:
                     {
-                        unsigned eol_x = EditLines[CurY].size();
-                        if(eol_x > 0 && (EditLines[CurY].back() & 0xFF) == '\n') --eol_x;
-                        if(CurX > eol_x) { CurX = eol_x; break; } // just do end-key
+                        unsigned eol_x = EditLines[Cur.y].size();
+                        if(eol_x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n') --eol_x;
+                        if(Cur.x > eol_x) { Cur.x = eol_x; break; } // just do end-key
                         WordVecType empty;
-                        PerformEdit(CurX,CurY, 1u, empty);
+                        PerformEdit(Cur.x,Cur.y, 1u, empty);
                         WasAppend = 1;
                         break;
                     }
@@ -1620,38 +1630,42 @@ int main(int argc, char**argv)
                     case 0x2C: TryUndo(); break; // alt+Z
                     case 0x15: TryRedo(); break; // alt+Y
                     case 0x13: TryRedo(); break; // alt+R
+                    case 0x78: CurrentCursor=0; break; // alt+1
+                    case 0x79: CurrentCursor=1; break; // alt+2
+                    case 0x7A: CurrentCursor=2; break; // alt+3
+                    case 0x7B: CurrentCursor=3; break; // alt+4
                 }
                 break;
             }
             case CTRL('Y'): // erase line
             {
-                CurX = 0;
+                Cur.x = 0;
                 WordVecType empty;
-                PerformEdit(CurX,CurY, EditLines[CurY].size(), empty);
+                PerformEdit(Cur.x,Cur.y, EditLines[Cur.y].size(), empty);
                 break;
             }
             case CTRL('H'): // backspace = left + delete
             {
                 WordVecType empty;
                 unsigned nspaces = 0;
-                while(nspaces < EditLines[CurY].size()
-                   && (EditLines[CurY][nspaces] & 0xFF) == ' ') ++nspaces;
-                if(nspaces > 0 && CurX == nspaces)
+                while(nspaces < EditLines[Cur.y].size()
+                   && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
+                if(nspaces > 0 && Cur.x == nspaces)
                 {
-                    nspaces = 1 + (CurX-1) % TabSize;
-                    CurX -= nspaces;
-                    PerformEdit(CurX,CurY, nspaces, empty);
+                    nspaces = 1 + (Cur.x-1) % TabSize;
+                    Cur.x -= nspaces;
+                    PerformEdit(Cur.x,Cur.y, nspaces, empty);
                 }
                 else
                 {
-                    if(CurX > 0) --CurX;
-                    else if(CurY > 0)
+                    if(Cur.x > 0) --Cur.x;
+                    else if(Cur.y > 0)
                     {
-                        --CurY;
-                        CurX = EditLines[CurY].size();
-                        if(CurX > 0) --CurX; // past LF
+                        --Cur.y;
+                        Cur.x = EditLines[Cur.y].size();
+                        if(Cur.x > 0) --Cur.x; // past LF
                     }
-                    PerformEdit(CurX,CurY, 1u, empty);
+                    PerformEdit(Cur.x,Cur.y, 1u, empty);
                 }
                 WasAppend = 1;
                 break;
@@ -1660,9 +1674,9 @@ int main(int argc, char**argv)
                 goto delkey;
             case CTRL('I'):
             {
-                unsigned nspaces = TabSize - CurX % TabSize;
+                unsigned nspaces = TabSize - Cur.x % TabSize;
                 WordVecType txtbuf(nspaces, 0x0720);
-                PerformEdit(CurX,CurY, InsertMode?0u:nspaces, txtbuf);
+                PerformEdit(Cur.x,Cur.y, InsertMode?0u:nspaces, txtbuf);
                 break;
             }
             case CTRL('M'): // enter
@@ -1672,21 +1686,21 @@ int main(int argc, char**argv)
                 if(InsertMode)
                 {
                     // Autoindent only in insert mode
-                    while(nspaces < EditLines[CurY].size()
-                       && (EditLines[CurY][nspaces] & 0xFF) == ' ') ++nspaces;
-                    if(CurX < nspaces) nspaces = CurX;
+                    while(nspaces < EditLines[Cur.y].size()
+                       && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
+                    if(Cur.x < nspaces) nspaces = Cur.x;
                 }
                 WordVecType txtbuf(nspaces + 1, 0x0720);
                 txtbuf[0] = 0x070A; // newline
-                PerformEdit(CurX,CurY, InsertMode?0u:1u, txtbuf);
-                //WinX = 0;
+                PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
+                //Win.x = 0;
                 WasAppend = 1;
                 break;
             }
             default:
             {
                 WordVecType txtbuf(1, 0x0700 | c);
-                PerformEdit(CurX,CurY, InsertMode?0u:1u, txtbuf);
+                PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
                 WasAppend = 1;
                 break;
             }
@@ -1695,20 +1709,20 @@ int main(int argc, char**argv)
         if(dragalong)
         {
             int w=0;
-            if(wasbegin || !wasend) { BlockBeginX=CurX; BlockBeginY=CurY; w=1; }
-            if(!wasbegin)           { BlockEndX=CurX; BlockEndY=CurY; w=1; }
+            if(wasbegin || !wasend) { BlockBegin.x=Cur.x; BlockBegin.y=Cur.y; w=1; }
+            if(!wasbegin)           { BlockEnd.x=Cur.x; BlockEnd.y=Cur.y; w=1; }
             if( !wasbegin && !wasend
-            && BlockBeginX==BlockEndX
-            && BlockBeginY==BlockEndY) { BlockEndX=WasX; BlockEndY=WasY; }
-            if(BlockBeginY > BlockEndY
-            || (BlockBeginY == BlockEndY && BlockBeginX > BlockEndX))
-               {{ unsigned tmp = BlockBeginY; BlockBeginY=BlockEndY; BlockEndY=tmp; }
-                { unsigned tmp = BlockBeginX; BlockBeginX=BlockEndX; BlockEndX=tmp; }}
+            && BlockBegin.x==BlockEnd.x
+            && BlockBegin.y==BlockEnd.y) { BlockEnd.x=WasX; BlockEnd.y=WasY; }
+            if(BlockBegin.y > BlockEnd.y
+            || (BlockBegin.y == BlockEnd.y && BlockBegin.x > BlockEnd.x))
+               {{ unsigned tmp = BlockBegin.y; BlockBegin.y=BlockEnd.y; BlockEnd.y=tmp; }
+                { unsigned tmp = BlockBegin.x; BlockBegin.x=BlockEnd.x; BlockEnd.x=tmp; }}
             if(w) VisRender();
         }
     }
 exit:;
-    CurX = 0; CurY = WinY + VidH; InsertMode = 1;
+    Cur.x = 0; Cur.y = Win.y + VidH; InsertMode = 1;
     if(FatMode || C64palette)
     {
         FatMode=0;
