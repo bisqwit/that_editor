@@ -111,7 +111,7 @@
 =Special2	02
 
 # The "::" operator
-=GlueColor	06
+=GlueColor	03
 
 # Operators that have a "=" in them
 =AssignColor	0A
@@ -221,6 +221,7 @@ done
 	"auto"		preproc_ident_known
 	"char"		preproc_ident_known
 	"const"		preproc_ident_known
+	"decltype"	preproc_ident_known
 	"double"	preproc_ident_known
 	"enum"		preproc_ident_known
 	"extern"	preproc_ident_known
@@ -706,6 +707,7 @@ done
 	"auto"		type
 	"char"		type
 	"const"		type
+	"decltype"	type
 	"double"	type
 	"enum"		type
 	"extern"	type

@@ -1679,7 +1679,7 @@ int main(int argc, char**argv)
                 WordVecType txtbuf(nspaces + 1, 0x0720);
                 txtbuf[0] = 0x070A; // newline
                 PerformEdit(CurX,CurY, InsertMode?0u:1u, txtbuf);
-                WinX = 0;
+                //WinX = 0;
                 WasAppend = 1;
                 break;
             }
