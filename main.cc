@@ -1,12 +1,26 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <ctype.h>
 
 #define CTRL(c) ((c) & 0x1F)
 
 volatile unsigned long MarioTimer = 0;
+
+// Return just the filename part of pathfilename
+const char* fnpart(const char* fn)
+{
+    if(!fn) return "[untitled]";
+    for(;;)
+    {
+        const char* p = strchr(fn, '/');
+        if(!p) break;
+        fn = p+1;
+    }
+    return fn;
+}
 
 #ifdef __BORLANDC__
 # include <dos.h> // for MK_FP
@@ -283,18 +297,6 @@ void VisSetCursor()
     unsigned cx = Win.x > Cur.x ? 0 : Cur.x-Win.x;       if(cx >= VidW) cx = VidW-1;
     unsigned cy = Win.y > Cur.y ? 1 : Cur.y-Win.y; ++cy; if(cy >= VidH) cy = VidH-1;
     VisPutCursorAt(cx,cy);
-}
-// Return just the filename part of pathfilename
-const char* fnpart(const char* fn)
-{
-    if(!fn) return "[untitled]";
-    for(;;)
-    {
-        const char* p = strchr(fn, '/');
-        if(!p) break;
-        fn = p+1;
-    }
-    return fn;
 }
 void VisRenderStatus()
 {
@@ -1284,8 +1286,8 @@ int main(int argc, char**argv)
                 Cur.y += DimY;
                 if(Cur.y >= EditLines.size()) Cur.y = EditLines.size()-1;
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
-                if(Win.y + DimY > EditLines.size()
-                && EditLines.size() > DimY) Win.y = EditLines.size()-DimY;
+                /*if(Win.y + DimY > EditLines.size()
+                && EditLines.size() > DimY) Win.y = EditLines.size()-DimY;*/
                 if(shift) dragalong = 1;
                 break;
             }
@@ -1320,7 +1322,7 @@ int main(int argc, char**argv)
                 StatusLine[0] = 0;
                 break;
             case CTRL('Z'):
-                if(Win.y+DimY < EditLines.size()) ++Win.y;
+                if(Win.y+1/*+DimY*/ < EditLines.size()) ++Win.y;
                 StatusLine[0] = 0;
                 break;
             case CTRL('K'):
