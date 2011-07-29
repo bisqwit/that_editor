@@ -543,7 +543,7 @@ void WaitInput(int may_redraw = 1)
             if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
             || SyntaxCheckingNeeded == SyntaxChecking_DoingFull)
             {
-                _asm { hlt }
+               // _asm { hlt }
             }
         #endif
         } while(!kbhit());
@@ -1217,10 +1217,12 @@ void LineAskGo()
         if(line) free(line);
         return;
     }
+    unsigned oldy = Cur.y;
     Cur.x = 0;
     Cur.y = atoi(line) - 1;
     free(line);
-    Win.y = (Cur.y > DimY/2) ? Cur.y - (DimY>>1) : 0;
+    //Win.y = (Cur.y > DimY/2) ? Cur.y - (DimY>>1) : 0;
+    Win.y = Cur.y > oldy ? (Cur.y > (DimY-2) ? Cur.y - (DimY-2) : 0) : Cur.y;
     Win.x = 0;
     VisRenderStatus();
     VisRender();
@@ -1589,15 +1591,15 @@ int main(int argc, char**argv)
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                              use9bit, dblw, dblh);
                             char FPSstr[64] = "";
-                            if(VidW > 60)
+                            if(VidW >= 40)
                             {
                                 long fpsval = VidFPS*1000.0 + 0.5;
                                 sprintf(FPSstr, "; fps=%ld.%03ld", fpsval/1000, fpsval%1000);
                                 // ^ For some reason, fltform print doesn't work
                             }
                             sprintf(StatusLine,
-                                "%s: %ux%u %s %ux%u font (%ux%u)%s",
-                                    VidW < 53 ? "Mode chg" : "Selected text mode",
+                                "%s: %ux%u %s %ux%u (%ux%u)%s",
+                                    VidW < 53 ? "Mode" : "Selected text mode",
                                     VidW,VidH,
                                     VidW < 44 ? "w/" : "with",
                                     (use9bit ? 9 : 8) * (FatMode?2:1),

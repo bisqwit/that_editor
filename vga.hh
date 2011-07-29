@@ -123,8 +123,8 @@ void VgaSetCustomMode(
     unsigned hdispend = width;
     unsigned vdispend = height*font_height;
     if(is_double) vdispend *= 2;
-    unsigned htotal = width*5/4;
-    unsigned vtotal = vdispend+45;
+    unsigned htotal = width+6;//*5/4;
+    unsigned vtotal = vdispend+11;//45;
 
     //if(1)
     {
@@ -240,7 +240,7 @@ void VgaSetCustomMode(
     overflow |= ((vdispend-1) & 0x100) >> 7;
     overflow |= ((vdispend-1) & 0x200) >> 3;
     ver_overflow |= ((vdispend-1) & 0x400) >> 9;
-    unsigned vblank_trim = vdispend / 66;
+    unsigned vblank_trim = 2;//vdispend / 66;
     outport(0x3D4, 0x15 | ((vdispend+vblank_trim) << 8));
     overflow |= ((vdispend+vblank_trim) & 0x100) >> 5;
     max_scanline |= ((vdispend+vblank_trim) & 0x200) >> 4;
@@ -270,7 +270,7 @@ void VgaSetCustomMode(
     outportb(0x3D4, 0x11); outportb(0x3D5, inportb(0x3D5)|0x80);
     outport(0x3D4, 0x67 | (0 << 8)); // S3 trio
 
-    unsigned misc_output = 0x63;/*0x02*/
+    unsigned misc_output = 0x63;/*0x67;*/ /*0x02*/
     outportb(0x3C2, misc_output); // misc output
 
     {unsigned char Gfx[9] = { 0,0,0,0,0,0x10,0x0E,0x0F,0xFF };
