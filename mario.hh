@@ -192,7 +192,7 @@ void MarioTranslate(
     unsigned char RevisedFontData[ 6 * 32 ];
 
     const unsigned MarioColor = 0x0800;
-    const unsigned base = FatMode ? 0x80 : 0xC0;
+    const unsigned base = FatMode ? 0x80 : 0xD0;
     const unsigned short chartable[6] =
         { base + 0x0 + MarioColor,
           base + 0x3 + MarioColor,
