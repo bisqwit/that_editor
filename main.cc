@@ -10,17 +10,21 @@
 #define CTRL(c) ((c) & 0x1F)
 
 static const int ENABLE_DRAG = 0;
-
+static int use9bit, dblw, dblh;
+#define columns 1
 volatile unsigned long MarioTimer = 0;
 
 // Return just the filename part of pathfilename
 const char* fnpart(const char* fn)
 {
-    if(!fn) return "[untitled]";
+    if(!fn) return "Untitled";
     for(;;)
     {
         const char* p = strchr(fn, '/');
-        if(!p) break;
+        if(!p) {
+            p = strchr(fn, '\\');
+            if(!p) break;
+        }
         fn = p+1;
     }
     return fn;
@@ -292,8 +296,15 @@ void VisSoftCursor(int mode)
 void VisPutCursorAt(unsigned cx,unsigned cy)
 {
 #ifdef __BORLANDC__
+    if(columns > 1)
+    {
+        register unsigned short h = (VidH-1) / columns;
+        cx += ((cy-1) / h) * VidW;
+        cy =  ((cy-1) % h) + 1;
+    }
     if(FatMode) cx *= 2;
     unsigned char cux = cx, cuy = cy;
+
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
     size = (size << 8) | (VidCellHeight-1);
     if(C64palette) size = 0x3F3F;
@@ -308,7 +319,7 @@ void VisSetCursor()
 {
     unsigned cx = Win.x > Cur.x ? 0 : Cur.x-Win.x;       if(cx >= VidW) cx = VidW-1;
     unsigned cy = Win.y > Cur.y ? 1 : Cur.y-Win.y; ++cy; if(cy >= VidH) cy = VidH-1;
-    VisPutCursorAt(cx,cy);
+    VisPutCursorAt(cx+1,cy+1);
 }
 
 static long CYCLES_Current = 80000l;
@@ -352,8 +363,10 @@ static void Cycles_Check()
 
 void VisRenderStatus()
 {
-    WordVecType Hdr(VidW*2);
-    unsigned short* Stat = GetVidMem(0, VidH-1);
+    unsigned StatusWidth = VidW*columns;
+
+    WordVecType Hdr(StatusWidth*2);
+    unsigned short* Stat = GetVidMem(0, (VidH-1) / columns, 1);
 
     time_t t = time(0);
     struct tm* tm = localtime(&t);
@@ -365,80 +378,87 @@ void VisRenderStatus()
     tm->tm_min  = time/60;
     tm->tm_sec  = time%60;
     */
+    char Buf1[80], Buf2[32], Buf3[16], Buf4[80], Buf5[16];
+    unsigned StatusLength = strlen(StatusLine);
 
-    int showfn = VidW > 60;
-    char Buf1[80], Buf2[80];
-    sprintf(Buf1, "%s%sRow %-5u/%u Col %-5u",
-        showfn ? fnpart(CurrentFileName) : "",
-        showfn ? " " : "",
-        (unsigned) (Cur.y+1),
-        (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
-        (unsigned) (Cur.x+1));
-    sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
-    unsigned x1a = VidW*12/70;
-    unsigned x2a = VidW*55/70;
-    if(showfn) x1a = 7;
-    unsigned x1b = x1a + strlen(Buf1);
-    unsigned x2b = x2a + strlen(Buf2);
+    sprintf(Buf2, "%5u lines | %02d:%02d:%02d",
+        (unsigned) EditLines.size(),
+        tm->tm_hour,tm->tm_min,tm->tm_sec);
+    sprintf(Buf3, "%c    %05d:%03d ",
+        InsertMode ? (FatMode ? '|' : 0xB3) : 'O',
+        (unsigned)(Cur.y+1), (unsigned)(Cur.x+1));
+                  //I*^I
+    unsigned x3a = VidW-15;
+    unsigned x2a = x3a - 9 - 14;
+    unsigned x1a = 0;
+    unsigned x4a = 2    ;
+    unsigned x5a = VidW-6;
 
-    static const unsigned char slide[] = {3,7,7,7,7,3,3,2};
-    static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
-    #define f(v) v / 16.0f
-    static const float Bayer[16] = { f(0),f(8),f(4),f(12),f(2),f(10),f(6),f(14),
-                                     f(3),f(11),f(7),f(15),f(1),f(9),f(5),f(13) };
-    #undef f
+    int status_where = -1;
+    if(StatusLength > 0)
+    {
+        if(StatusLength < x3a)
+            status_where = 0; // Bottom
+        else
+            status_where = 1; // Top
+    }
+
+    if(status_where == 1)
+        { strncpy(Buf4, StatusLine, 80); x5a = VidW; }
+    else
+    {
+        sprintf(Buf4, "File  Edit  View  Search  Run  Bogus  Menu  Bar");
+        sprintf(Buf5, "Help");
+    }
+
+    if(status_where == 0)
+    {
+        strncpy(Buf1, StatusLine, 80);
+        if(StatusLength >= x2a) x2a = x3a;
+    }
+    else
+        sprintf(Buf1, " QBasic masquerade mode engaged.");
+
     {for(unsigned x=0; x<VidW; ++x)
     {
-        float xscale = x * (sizeof(slide)-1) / float(VidW-1);
-        unsigned c1 = slide[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
-        unsigned c2 = slide[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
-        unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
-        if(C64palette) color = 0x7020;
+        unsigned color = 0x3020;
+        // bottom bar
+        if(x >= x3a)
+        {
+            /**/ if(x==x3a+1 && WaitingCtrl)
+                color = (color&0xF000) | '^';
+            else if(x==x3a+2 && WaitingCtrl)
+                color = (color&0xF000) | WaitingCtrl;
+            else if(x==x3a+4 && UnsavedChanges)
+                color = (color&0xF000) | '*';
+            else
+                color = (color&0xF000) | (unsigned char)Buf3[x-x3a];
+        }
+        else if(x >= x2a) { if(Buf2[x-x2a])
+            color = 0x3000 | Buf2[x-x2a]; else ++x2a; }
+        else if(x >= x1a) { if(Buf1[x-x1a])
+            color = (status_where==0 ? 0x3F00 : 0x3000)
+                     | Buf1[x-x1a]; else ++x1a; }
+        if(FatMode)
+            { Stat[x+x] = color; Stat[x+x+1] = color|0x80; }
+        else
+            Stat[x] = color;
 
-        if(x == 0 && WaitingCtrl)
-            color = (color&0xF000) | '^';
-        else if(x == 1 && WaitingCtrl)
-            color = (color&0xF000) | WaitingCtrl;
-        else if(x == 3 && InsertMode)
-            color = (color&0xF000) | 'I';
-        else if(x == 4 && UnsavedChanges)
-            color = (color&0xF000) | '*';
-        else if(x >= x1a && x < x1b && Buf1[x-x1a] != ' ')
-            color = (color&0xF000) | Buf1[x-x1a];
-        else if(x >= x2a && x < x2b && Buf2[x-x2a] != ' ')
-            color = (color&0xF000) | Buf2[x-x2a];
+        // top bar
+        color = 0x7020;
+        if(x >= x5a) { if(Buf5[x-x5a])
+            color = 0x7000 + Buf5[x-x5a]; else ++x5a; }
+        else if(x >= x4a) { if(Buf4[x-x4a])
+            color = 0x7000 + Buf4[x-x4a]; else ++x4a; }
+
         if(FatMode)
             { Hdr[x+x] = color; Hdr[x+x+1] = color|0x80; }
         else
             Hdr[x] = color;
     }}
-    if(StatusLine[0])
-        {for(unsigned p=0,x=0; x<VidW; ++x)
-        {
-            float xscale = x * (sizeof(slide2)-1) / float(VidW-1);
-            unsigned c1 = slide2[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
-            unsigned c2 = slide2[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
-            unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
-            if(C64palette) color = 0x7020;
-            unsigned char c = StatusLine[p]; if(!c) c = 0x20;
-            if(c != 0x20 || (((color >> 12)) == ((color >> 8)&0xF)))
-            {
-                color = (color & 0xF000u) | c;
-                if((color >> 12) == ((color >> 8)&0xF)) color |= 0x700;
-            }
-            if(!C64palette && c != 0x20)
-                switch(color>>12)
-                {
-                    case 8: color |= 0x700; break;
-                    case 0: color |= 0x800; break;
-                }
-            if(FatMode)
-                { Stat[x+x] = color; Stat[x+x+1] = color|0x80; }
-            else
-                Stat[x] = color;
-            if(StatusLine[p]) ++p;
-        }}
-    MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
+
+    //MarioTranslate(&Hdr[0], GetVidMem(0,VidH-1), VidW);
+    MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);
 
 #ifdef __BORLANDC__
     if(0 && !kbhit())
@@ -454,22 +474,83 @@ void VisRender()
 {
     WordVecType EmptyLine;
 
-    unsigned winh = VidH - 1;
-    if(StatusLine[0]) --winh;
+    unsigned winh = VidH - 3;
 
     VisSoftCursor(-1);
 
+    {unsigned short* Tgt = GetVidMem(0, 1);
+    const char* editfn = fnpart(CurrentFileName);
+    unsigned editfnlen = strlen(editfn);
+    unsigned editfnpos = (VidW - (editfnlen+2)) / 2;
+    if(FatMode)
+    {
+        *Tgt++ = 0x172B; // '+'
+        *Tgt++ = 0x17AB;
+    }
+    else
+    {
+        *Tgt++ = 0x17DA; // corner
+    }
+    for(unsigned x=1; x<VidW-1; ++x)
+    {
+        if(x >= editfnpos)
+        {
+            unsigned p = x - editfnpos;
+            if(p >= 1 && p <= editfnlen)
+                { *Tgt++ = 0x7100 | (unsigned char)editfn[p-1];
+                  if(FatMode) *Tgt++ = 0x7180 | (unsigned char)editfn[p-1];
+                  continue;
+                }
+            if(p < editfnlen+2)
+                { *Tgt++ = 0x7120;
+                  if(FatMode) *Tgt++ = 0x71A0;
+                  continue; }
+        }
+        unsigned decor;
+        /**/ if(x == VidW-5) decor = FatMode ? 0x177C : 0x17B4; //
+        else if(x == VidW-4) decor = FatMode ? 0x7125 : 0x7112; //
+        else if(x == VidW-3) decor = FatMode ? 0x177C : 0x17C3; //
+        else decor = FatMode ? 0x172D : 0x17C4; // horizontal line
+        *Tgt++ = decor;
+        if(FatMode) *Tgt++ = decor | 0x80;
+    }
+    if(FatMode)
+    {
+        *Tgt++ = 0x172B; // '+'
+        *Tgt++ = 0x17AB;
+    }
+    else
+    {
+        *Tgt++ = 0x17BF; // corner
+    }
+    }
+
+    // How much does the window show of the entire program?
+    unsigned move = EditLines.size(); if(move > winh) move -= winh;
+    unsigned scrollbar_height = (winh-2) * winh / EditLines.size();
+    if(scrollbar_height < 1) scrollbar_height = 1;
+    unsigned scrollbar_begin = 1 + (winh-2-scrollbar_height) * Win.y / move;
+    unsigned scrollbar_end   = scrollbar_begin + scrollbar_height;
+
     for(unsigned y=0; y<winh; ++y)
     {
-        unsigned short* Tgt = GetVidMem(0, y+1);
+        unsigned short* Tgt = GetVidMem(0, y+2);
 
         unsigned ly = Win.y + y;
 
         WordVecType* line = &EmptyLine;
         if(ly < EditLines.size()) line = &EditLines[ly];
 
-        unsigned lw = line->size(), lx=0, x=Win.x, xl=x + VidW;
-        unsigned trail = 0x0720;
+        unsigned lw = line->size(), lx=0, x=Win.x, xl=x + VidW - 2;
+        unsigned trail = 0x1720;
+        unsigned verticalbar = FatMode ? 0x177C : 0x17B3;
+        unsigned arrowup     = FatMode ? 0x705E : 0x7018;
+        unsigned arrowdown   = FatMode ? 0x7076 : 0x7019;
+        unsigned scrollback  = FatMode ? 0x7023 : 0x70B0;
+
+        *Tgt++ = verticalbar;
+        if(FatMode) *Tgt++ = verticalbar | 0x80;
+
         for(unsigned l=0; l<lw; ++l)
         {
             unsigned attr = (*line)[l];
@@ -501,6 +582,23 @@ void VisRender()
             *Tgt++ = trail;
             if(FatMode) *Tgt++ = trail | 0x80;
         }
+
+        unsigned scroll;
+        if(y == 0)
+            scroll = arrowup; // arrow up
+        else if(y == winh-1)
+            scroll = arrowdown; // arrow down
+        else if(y >= scrollbar_begin
+             && y < scrollbar_end)
+            scroll = 0x0020; // scrollbar 
+        else
+            scroll = scrollback; // scrollbar background
+
+        *Tgt++ = scroll;
+        if(FatMode) *Tgt++ = scroll | 0x80;
+
+        *Tgt++ = verticalbar;
+        if(FatMode) *Tgt++ = verticalbar | 0x80;
     }
     VisSoftCursor(1);
 
@@ -541,7 +639,7 @@ void WaitInput(int may_redraw = 1)
     if(may_redraw)
     {
         if(cx != Cur.x || cy != Cur.y) { cx=Cur.x; cy=Cur.y; VisSoftCursor(-1); VisSetCursor(); }
-        if(StatusLine[0] && Cur.y >= Win.y+VidH-2) Win.y += 2;
+        while(Cur.y >= Win.y+VidH-3) Win.y += 1;
     }
 
     Cycles_Adjust(1);
@@ -549,7 +647,7 @@ void WaitInput(int may_redraw = 1)
     if(!kbhit())
     {
         while(Cur.x < Win.x) Win.x -= 8;
-        while(Cur.x >= Win.x + VidW) Win.x += 8;
+        while(Cur.x >= Win.x + VidW-2) Win.x += 8;
         if(may_redraw)
         {
             if(wx != Win.x || wy != Win.y)
@@ -677,6 +775,11 @@ void AddRedo(const UndoEvent& event)
          for(cn=0; cn<MaxSavedCursors; ++cn) \
              { Anchor& c = SavedCursors[cn]; o(); } \
     } while(0)
+#define TheOtherCursors() \
+    do { int cn; \
+         for(cn=MaxSavedCursors; cn<NumCursors; ++cn) \
+             { Anchor& c = SavedCursors[cn]; o(); } \
+    } while(0)
 
 void PerformEdit(
     unsigned x, unsigned y,
@@ -774,7 +877,11 @@ void PerformEdit(
             // Update cursors
             #define o() if(c.y == y && c.x >= x) { c.y += insert_newline_count; c.x -= x; } \
                    else if(c.y > y) { c.y += insert_newline_count; }
-            AllCursors();
+            AlmostAllCursors();
+            #undef o
+            #define o() if(c.y == y && c.x > x) { c.y += insert_newline_count; c.x -= x; } \
+                   else if(c.y > y) { c.y += insert_newline_count; }
+            TheOtherCursors();
             #undef o
         }
         unsigned insert_beginpos = 0;
@@ -795,6 +902,11 @@ void PerformEdit(
                     insert_chars.begin() + p );
                 #define o() if(c.y == y && c.x >= x) c.x += n_inserted
                 AlmostAllCursors();
+                #undef o
+                // For block begin & end markers, don't move them
+                // if they are right at the cursor's location.
+                #define o() if(c.y == y && c.x > x) c.x += n_inserted
+                TheOtherCursors();
                 #undef o
                 x += n_inserted;
                 insert_beginpos = p;
@@ -944,8 +1056,6 @@ void FindPair()
         }
 }
 
-int use9bit, dblw, dblh;
-
 int SelectFont()
 {
     struct opt
@@ -1032,7 +1142,7 @@ int SelectFont()
         VisSoftCursor(-1);
         sprintf(StatusLine, "Please select new font size [Cancel]");
         VisRenderStatus();
-        StatusLine[0] = 0;
+        StatusLine[0] = '\0';
 
         char marker_empty  = '.';
         {for(unsigned y=0; y<noptions; ++y)
@@ -1117,7 +1227,11 @@ int SelectFont()
             }
         else goto rewait;
     }
-    if(sel_y == -1) return 0;
+    if(sel_y == -1)
+    {
+        StatusLine[0] = '\0';
+        return 0;
+    }
     dblw = wdblset[sel_x];
     dblh = hdblset[sel_x];
     VidCellHeight = options[sel_y].py;
@@ -1146,7 +1260,7 @@ int VerifyUnsavedExit(const char* action)
         || c == 'N' || c == 'n') { decision=0; break; }
         if(c == 0) getch();
     }
-    StatusLine[0] = 0;
+    StatusLine[0] = '\0';
     VisSetCursor();
     VisRender();
     return decision;
@@ -1332,17 +1446,62 @@ void ResizeAsk() // Ask for new screen dimensions
     VidH = newh;
 }
 
+void QBcompileRun()
+{
+    // To compile properly, need DECLARE statements.
+    // Let's go the easier way and use QuickBASIC
+    VisPutCursorAt(0, VidH-1);
+#if 1
+    char Cmd1[1024];
+    sprintf(Cmd1, "/RUN %s /AH/G", CurrentFileName);
+    if(printf("qb %s\n", Cmd1) >= 0
+    && spawnlp(P_WAIT, "qb",   "qb", Cmd1, NULL) == 0)
+    {
+        //
+    }
+#else
+    static const char objfn[] = "tmp.obj";
+    static const char exefn[] = "tmp.exe";
+    char Cmd1[1024];
+    char Cmd2[1024];
+    int has_resume_lineno = 0;
+    int has_resume_other  = 0;
+    int has_event_triggers = 0;
+
+    sprintf(Cmd1, "%s,%s,NUL/ah%s%s%s%s%s",
+        CurrentFileName,
+        objfn,
+        0 ? "/d" : "", // debugging
+        has_resume_lineno ? "/e" : "", // has RESUME <linenumber>
+        1 ? "/o" : "", // standalone
+        has_event_triggers ? "/v" : "", // has ON TIMER, ON PLAY etc. event traps
+        has_resume_other ? "/x" : "" // has RESUME, RESUME NEXT, or RESUME 0
+    );
+    sprintf(Cmd2, "%s,%s,NUL,bcom45.lib,,/NOE",
+        objfn,
+        exefn);
+
+    if(printf("bc %s\n", Cmd1) >= 0
+    && spawnlp(P_WAIT, "bc",   "bc", Cmd1, NULL) == 0
+    && printf("link %s\n", Cmd2) >= 0
+    && spawnlp(P_WAIT, "link", "link", Cmd2, NULL) == 0)
+    {
+        spawnl(P_WAIT, (char*) exefn, (char*) exefn, NULL);
+    }
+#endif
+}
+
 int main(int argc, char**argv)
 {
-  #if 0
+  #if 1
     // Set mode (for dosbox recording)
-    VgaSetCustomMode(80,25,16,1,0,0);
+    VgaSetCustomMode(80,25,16,1,0,0, 1);// columns = 1;
   #endif
 
 #ifdef __BORLANDC__
     InstallMario();
 #endif
-    Syntax.Parse("c.jsf");
+    Syntax.Parse("qb.jsf");
     FileNew();
     if(argc == 2)
     {
@@ -1389,7 +1548,7 @@ int main(int argc, char**argv)
             {
             pgdn:;
                 unsigned offset = Cur.y-Win.y;
-                Cur.y += DimY;
+                Cur.y += DimY-3;
                 if(Cur.y >= EditLines.size()) Cur.y = EditLines.size()-1;
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
                 /*if(Win.y + DimY > EditLines.size()
@@ -1401,7 +1560,7 @@ int main(int argc, char**argv)
             {
             pgup:;
                 unsigned offset = Cur.y - Win.y;
-                if(Cur.y > DimY) Cur.y -= DimY; else Cur.y = 0;
+                if(Cur.y > DimY-3) Cur.y -= DimY-3; else Cur.y = 0;
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
                 if(shift && ENABLE_DRAG) dragalong = 1;
                 break;
@@ -1425,12 +1584,12 @@ int main(int argc, char**argv)
             }
             case CTRL('W'):
                 if(Win.y > 0) --Win.y;
-                StatusLine[0] = 0;
+                StatusLine[0] = '\0';
                 break;
             case CTRL('Z'):
                 if(Win.y+1/*+DimY*/ < EditLines.size()) ++Win.y;
                 if(Cur.y < Win.y) Cur.y = Win.y;
-                StatusLine[0] = 0;
+                StatusLine[0] = '\0';
                 break;
             case CTRL('K'):
             {
@@ -1567,7 +1726,7 @@ int main(int argc, char**argv)
                         break;
                     case 'P': // down
                         if(Cur.y+1 < EditLines.size()) ++Cur.y;
-                        if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
+                        if(Cur.y >= Win.y+DimY-3) Win.y = Cur.y - DimY+3;
                         if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 0x47: // home
@@ -1629,12 +1788,12 @@ int main(int argc, char**argv)
                     }
                     case 0x74: // ctrl-right (go right on word boundary)
                     {
-                        while( Cur.y < EditLines.size()
+                        while( Cur.y+1 < EditLines.size()
                             && Cur.x < EditLines[Cur.y].size()
                             && isalnum(EditLines[Cur.y][Cur.x]&0xFF) )
                             k_right();
                         do k_right();
-                        while( Cur.y < EditLines.size()
+                        while( Cur.y+1 < EditLines.size()
                             && Cur.x < EditLines[Cur.y].size()
                             && !isalnum(EditLines[Cur.y][Cur.x]&0xFF) );
                         if(shift && ENABLE_DRAG) dragalong = 1;
@@ -1656,14 +1815,14 @@ int main(int argc, char**argv)
                     ctrlpgdn:
                         Cur.y = EditLines.size()-1;
                         Win.y = 0;
-                        if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
+                        if(Cur.y >= Win.y+DimY-3) Win.y = Cur.y - DimY+3;
                         goto end;
                     case 0x77: // ctrl-home = goto beginning of window (vertically)
                         Cur.y = Win.y;
                         if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 0x75: // ctrl-end = goto end of window (vertically)
-                        Cur.y = Win.y + VidH-1;
+                        Cur.y = Win.y + VidH-4;
                         if(shift && ENABLE_DRAG) dragalong = 1;
                         // Hide the status line
                         StatusLine[0] = '\0';
@@ -1686,7 +1845,18 @@ int main(int argc, char**argv)
                     case 0x3C: VidH += 1; goto newmode; // F2
                     case 0x3D: VidW -= 2; goto newmode; // F3
                     case 0x3E: VidW += 2; goto newmode; // F4
-                    case 0x3F: use9bit = !use9bit; goto newmode; // F5
+                    case 0x3F:
+               #if 0
+                        use9bit = !use9bit; goto newmode; // F5
+               #else
+                        // QBASIC COMPILE
+                    {
+                        DeInstallMario();
+                        QBcompileRun();
+                        InstallMario();
+                        goto newmode; // reset the display mode
+                    }
+               #endif
                     case 0x40: if(shift) goto shiftF6;
                         if(dblw) { dblw=0; VidW*=2; }
                         else     { dblw=1; VidW/=2; VidW&=~1; }
@@ -1714,7 +1884,8 @@ int main(int argc, char**argv)
                             if(VidW > 240) VidW = 240;
                             if(VidH > 127) VidH = 127;
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                                             use9bit, dblw, dblh);
+                                             use9bit, dblw, dblh,
+                                             columns);
                             char FPSstr[64] = "";
                             if(VidW >= 40)
                             {
@@ -1809,7 +1980,7 @@ int main(int argc, char**argv)
             case CTRL('I'):
             {
                 unsigned nspaces = TabSize - Cur.x % TabSize;
-                WordVecType txtbuf(nspaces, 0x0720);
+                WordVecType txtbuf(nspaces, 0x1720);
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:nspaces, txtbuf);
                 break;
             }
@@ -1824,8 +1995,8 @@ int main(int argc, char**argv)
                        && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
                     if(Cur.x < nspaces) nspaces = Cur.x;
                 }
-                WordVecType txtbuf(nspaces + 1, 0x0720);
-                txtbuf[0] = 0x070A; // newline
+                WordVecType txtbuf(nspaces + 1, 0x1720);
+                txtbuf[0] = 0x170A; // newline
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
                 //Win.x = 0;
                 WasAppend = 1;
@@ -1833,7 +2004,7 @@ int main(int argc, char**argv)
             }
             default:
             {
-                WordVecType txtbuf(1, 0x0700 | c);
+                WordVecType txtbuf(1, 0x1700 | c);
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
                 WasAppend = 1;
                 break;
@@ -1862,7 +2033,7 @@ exit:;
         FatMode=0;
         C64palette=0;
         VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                         use9bit, dblw, dblh);
+                         use9bit, dblw, dblh, columns);
     }
     VisSetCursor();
 #ifdef __BORLANDC__

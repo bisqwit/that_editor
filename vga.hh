@@ -10,12 +10,12 @@ double VidFPS = 60.0;
 const unsigned char* VgaFont = 0;
 int C64palette = 0, FatMode = 0, DispUcase = 0, DCPUpalette = 0;
 
-static const unsigned char c64font[8*(256-64)] = {
+/*static const unsigned char c64font[8*(256-64)] = {
 #include "c64font.inc"
 };
 static const unsigned char p32font[32*256] = {
 #include "8x32.inc"
-};
+};*/
 static const unsigned char p19font[19*256] = {
 #include "8x19.inc"
 };
@@ -28,12 +28,12 @@ static const unsigned char p10font[10*256] = {
 static const unsigned char p15font[15*256] = {
 #include "8x15.inc"
 };
-static const unsigned char p32wfont[32*256] = {
+/*static const unsigned char p32wfont[32*256] = {
 #include "16x32.inc"
 };
 static const unsigned char dcpu16font[8*256] = {
 #include "4x8.inc"
-};
+};*/
 
 void VgaGetFont()
 {
@@ -41,8 +41,8 @@ void VgaGetFont()
     switch(VidCellHeight)
     {
         case 8:
-            if(C64palette) { VgaFont = c64font-8*32; return; }
-            if(DCPUpalette) { VgaFont = dcpu16font; return; }
+            //if(C64palette) { VgaFont = c64font-8*32; return; }
+            //if(DCPUpalette) { VgaFont = dcpu16font; return; }
             mode = 3; break;
         case 14: mode = 2; break;
         case 16: mode = 6; break;
@@ -50,7 +50,7 @@ void VgaGetFont()
         case 12: { VgaFont = p12font; return; }
         case 10: { VgaFont = p10font; return; }
         case 15: { VgaFont = p15font; return; }
-        case 32: { VgaFont = FatMode ? p32wfont : p32font; return; }
+        //case 32: { VgaFont = FatMode ? p32wfont : p32font; return; }
         default: mode = 1; break;
     }
 #ifdef __BORLANDC__
@@ -80,6 +80,11 @@ void VgaGetMode()
 #endif
     if(FatMode) VidW /= 2;
     if(C64palette) { VidW -= 4; VidH -= 5; }
+    if(columns > 1)
+    {
+        VidW /= columns;
+        VidH = (VidH-1) * columns + 1;
+    }
 }
 
 void VgaSetMode(unsigned modeno)
@@ -145,7 +150,8 @@ void VgaSetCustomMode(
     unsigned font_height,
     int is_9pix,
     int is_half/*horizontally doubled*/,
-    int is_double/*vertically doubled*/)
+    int is_double/*vertically doubled*/,
+    int num_columns)
 {
     if(C64palette)
     {
@@ -155,6 +161,16 @@ void VgaSetCustomMode(
     if(FatMode)
         width *= 2;
 
+    VidW = width;
+    VidH = height;
+
+    // When columns are used:
+    if(num_columns)
+    {
+        width *= num_columns;
+        height = (height-1) / num_columns + 1;
+    }
+
 #ifdef __BORLANDC__
     unsigned hdispend = width;
     unsigned vdispend = height*font_height;
@@ -162,7 +178,7 @@ void VgaSetCustomMode(
     unsigned htotal = width*5/4;
     unsigned vtotal = vdispend+45;
 
-    *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
+    *(unsigned char*)MK_FP(0x40, 0x85) = font_height; // CHARACTER HEIGHT IN SCAN-LINES
 
     //if(1)
     {
@@ -183,19 +199,20 @@ void VgaSetCustomMode(
         }
         free(emptyfont);
     }
-    if(font_height == 16)
+    /*if(font_height == 16)
     {
         // Set standard 80x25 mode as a baseline
         // This triggers font reset on JAINPUT.
         *(unsigned char*)MK_FP(0x40,0x87) |= 0x80; // tell BIOS to not clear VRAM
         VgaSetMode(3);
         *(unsigned char*)MK_FP(0x40,0x87) &= ~0x80;
-    }
+    }*/
 
+    if(font_height ==16) { _asm { mov ax, 0x1104; mov bl, 0; int 0x10 } }
     if(font_height ==14) { _asm { mov ax, 0x1101; mov bl, 0; int 0x10 } }
     if(font_height == 8) {
         _asm { mov ax, 0x1102; mov bl, 0; int 0x10 }
-        if(DCPUpalette)
+        /*if(DCPUpalette)
         {
             _asm {
                 push es
@@ -211,8 +228,8 @@ void VgaSetCustomMode(
                 pop bp
                 pop es
             }
-        }
-        if(C64palette)
+        }*/
+        /*if(C64palette)
         {
             _asm {
                 push es
@@ -228,9 +245,9 @@ void VgaSetCustomMode(
                 pop bp
                 pop es
             }
-        }
+        }*/
     }
-    if(font_height == 32) {
+    /*if(font_height == 32) {
         const unsigned char* font = FatMode ? p32wfont : p32font;
         _asm {
             push es
@@ -244,7 +261,7 @@ void VgaSetCustomMode(
             pop bp
             pop es
         }
-    }
+    }*/
     if(font_height == 19) {
         _asm {
             push es
@@ -318,7 +335,7 @@ void VgaSetCustomMode(
     // Disable write protection
     outportb(0x3D4, 0x11); outportb(0x3D5, inportb(0x3D5)&0x7F);
     // crtc
-    {for(unsigned a=0; a<=0x18; ++a) outport(0x3D4, a | 0x0000);}
+    /*{for(unsigned a=0; a<=0x18; ++a) outport(0x3D4, a | 0x0000);}*/
     unsigned overflow = 0, max_scanline = 0, ver_overflow = 0, hor_overflow = 0;
     outport(0x3D4, 0x00 | ((htotal-5) << 8));   hor_overflow |= ((htotal-5) >> 8) << 0;
     outport(0x3D4, 0x01 | ((hdispend-1) << 8)); hor_overflow |= ((hdispend-1) >> 8) << 1;
@@ -399,8 +416,10 @@ void VgaSetCustomMode(
     *(unsigned char*)MK_FP(0x40,0x10) |= 0x20;
 
     *(unsigned char*)MK_FP(0x40,0x65) = 0x29;
-    *(unsigned char*)MK_FP(0x40, 0x4A) = width;
-    *(unsigned char*)MK_FP(0x40, 0x84) = height-1;    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
+    *(unsigned char*)MK_FP(0x40, 0x4A) = width; // COLUMNS ON SCREEN (ignored by dosbox :( )
+    *(unsigned char*)MK_FP(0x40, 0x84) = height-1; // ROWS ON SCREEN MINUS ONE
+    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2; // PAGE (REGEN BUFFER SIZE IN BYTES
+    *(unsigned short*)MK_FP(0x40, 0x4E) = 0; // CURRENTPAGE START IN REGEN BUFFER
 
     double clock = 28322000.0;
     if(((misc_output >> 2) & 3) == 0) clock = 25175000.0;
@@ -419,13 +438,33 @@ void VgaSetCustomMode(
         width -= 4; height -= 5;
     }
 
-    VidW = width;
-    VidH = height;
+//    VidW = width;
+//    VidH = height;
     VidCellHeight = font_height;
     VgaGetFont();
+
+    // Make  4:red (reserved words) an only-slightly-red-tinted white
+    outportb(0x3C8, 4);
+    outportb(0x3C9, 53);
+    outportb(0x3C9, 48);
+    outportb(0x3C9, 48);
+    // Make 13:magenta (symbols) only very slightly green tinted
+    outportb(0x3C9, 42);
+    outportb(0x3C9, 48);
+    outportb(0x3C9, 49);
+    // Make 10:brightgreen (data) much less bright
+    outportb(0x3C8, 64-8+ 2);
+    outportb(0x3C9, 42);
+    outportb(0x3C9, 57);
+    outportb(0x3C9, 45);
+    // Make  9:bright blue (comments) somewhat gray
+    outportb(0x3C8, 64-8+1);
+    outportb(0x3C9, 32);
+    outportb(0x3C9, 32);
+    outportb(0x3C9, 32);
 }
 
-inline unsigned short* GetVidMem(unsigned x, unsigned y)
+inline unsigned short* GetVidMem(unsigned x, unsigned y, int real=0)
 {
     if(C64palette)
     {
@@ -437,6 +476,21 @@ inline unsigned short* GetVidMem(unsigned x, unsigned y)
     else
     {
         register unsigned offs = x + y * VidW;
+        if(columns > 1)
+        {
+            register unsigned width = VidW * columns;
+            if(real || columns <= 1 || y == 0)
+            {
+                register unsigned offs = x + y * width;
+                if(FatMode) offs <<= 1;
+                return VidMem + offs;
+            }
+            register unsigned lines_per_real_screen = (VidH-1) / columns;
+            offs =
+                x
+              + ((y-1) % lines_per_real_screen + 1) * width
+              + ((y-1) / lines_per_real_screen) * VidW;
+        }
         if(FatMode) offs <<= 1;
         return VidMem + offs;
     }
