@@ -85,7 +85,7 @@ static unsigned char kbhitbuf[] =
 const unsigned UnknownColor = 0x2400;
 
 char StatusLine[256] =
-"Ad-hoc programming editor - (C) 2011-03-08 Joel Yliluoma";
+"Ad-hoc programming editor - (C) 2011 Joel Yliluoma || Cave Story Mode Enabled";
 
 WordPtrVecType EditLines;
 
@@ -481,7 +481,8 @@ void VisRenderStatus()
     unsigned x2b = x2a + strlen(Buf2);
 
     static const unsigned char slide[] = {3,7,7,7,7,3,3,2};
-    static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
+    static const unsigned char slide2[] = {15,11,9,9,9,9,9,3,3,3}; // CAVE STORY MODE
+    //static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
     #define f(v) v / 16.0f
     static const float Bayer[16] = { f(0),f(8),f(4),f(12),f(2),f(10),f(6),f(14),
                                      f(3),f(11),f(7),f(15),f(1),f(9),f(5),f(13) };
@@ -1477,7 +1478,7 @@ int main(int argc, char**argv)
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
 #endif
 
-    unsigned long StatusLineProtection = MarioTimer + 200u;
+    unsigned long StatusLineProtection = MarioTimer + 100u;
 
     for(;;)
     {
