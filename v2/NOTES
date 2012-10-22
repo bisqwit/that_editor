@@ -1,0 +1,14 @@
+
+
+
+
+In WaitInput,
+	If syntax checking is flawless, do _asm { hlt }
+	
+	If window location is different, or syntax changed,
+	render entire screen.
+	
+	Place cursor on the right spot.
+	Note special save-restore handling for soft-cursor.
+	
+
