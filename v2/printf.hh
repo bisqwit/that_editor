@@ -47,10 +47,10 @@ public:
     }
 
     template<typename T, typename... T2>
-    void Execute(State& state, const T& a, T2... rest)
+    void Execute(State& state, const T& a, const T2&... rest)
     {
-        // TODO: Use is_trivially_copyable rather than is_pod,
-        //       once GCC supports it
+        // TODO: Use is_trivially_copyable rather than is_pod, once GCC supports it.
+        // Choose the optimal manner of parameter passing:
         typedef typename std::conditional<std::is_pod<T>::value, T, const T&>::type TT;
         ExecutePart<TT>(state, a);
         Execute(state, rest...);
@@ -65,7 +65,7 @@ private:
 };
 
 template<typename... T>
-std::basic_string<char32_t> Printf(PrintfFormatter& fmt, T... args)
+std::basic_string<char32_t> Printf(PrintfFormatter& fmt, const T&... args)
 {
     PrintfFormatter::State state;
     fmt.Execute(state, args...);
@@ -73,18 +73,18 @@ std::basic_string<char32_t> Printf(PrintfFormatter& fmt, T... args)
 }
 
 
+/* This is the function you would use. */
 template<typename CT, typename... T>
-std::basic_string<char32_t>
-    Printf(const std::basic_string<CT>& format, T... args)
+std::basic_string<char32_t> Printf(const std::basic_string<CT>& format, const T&... args)
 {
     PrintfFormatter Formatter;
     Formatter.MakeFrom(format);
     return Printf(Formatter, args...);
 }
 
+/* This is the function you would use. */
 template<typename CT, typename... T>
-std::basic_string<char32_t>
-    Printf(const CT* format, T... args)
+std::basic_string<char32_t> Printf(const CT* format, const T&... args)
 {
     PrintfFormatter Formatter;
     Formatter.MakeFrom(format);

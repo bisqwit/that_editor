@@ -74,11 +74,8 @@ class Editor
         void AddUndo(const UndoEvent& e);
         void AddRedo(const UndoEvent& e);
         void ClearRedo() { RedoQueue.clear(); }
-        void ClearUndo() { UndoQueue.clear(); }
+        void ClearUndo() { UndoQueue.clear(); UndoAppendOk = false; }
     } UndoQueue;
-
-    void TryUndo();
-    void TryRedo();
 
     /*** Cursors and windows ***/
 
@@ -171,14 +168,60 @@ class Editor
 
     //////////////////////
 
-    void BlockIndent(int offset);
-
     void PerformEdit(
         std::size_t x, std::size_t y,
         std::size_t n_delete,
-        std::vector<Cell> insert_chars,
+        const std::vector<Cell>& insert_chars,
         unsigned char DoingUndo = 0);
 
+    void Act_BlockIndent(int offset);
+
     // Put the cursor to the corresponding parenthesis
-    void FindPair(std::size_t which_window);
+    void Act_FindPair(std::size_t which_window);
+
+    void Act_PageDn(std::size_t which_window);
+    void Act_PageUp(std::size_t which_window);
+    void Act_TryUndo();
+    void Act_TryRedo();
+
+
+    void Act_WindowUp(std::size_t which_window);
+    void Act_WindowDn(std::size_t which_window);
+    void Act_BlockMark(std::size_t which_window);
+    void Act_BlockMarkEnd(std::size_t which_window);
+    void Act_BlockMove(std::size_t which_window);
+    void Act_BlockCopy(std::size_t which_window);
+    void Act_BlockDelete();
+    void Act_BlockIndent();
+    void Act_BlockUnindent();
+    void Act_CharacterInfo(std::size_t which_window);
+    void Act_InsertLiteralCharacter(std::size_t which_window, char32_t ch);
+    void Act_Up(std::size_t which_window);
+    void Act_Dn(std::size_t which_window);
+    void Act_Home(std::size_t which_window);
+    void Act_End(std::size_t which_window);
+    void Act_Left(std::size_t which_window);
+    void Act_Right(std::size_t which_window);
+    void Act_WordLeft(std::size_t which_window);
+    void Act_WordRight(std::size_t which_window);
+    void Act_ToggleInsert(std::size_t which_window);
+    void Act_HomeHome(std::size_t which_window); // Goto beginning of file
+    void Act_EndEnd(std::size_t which_window); // Goto end of file
+    void Act_PageHome(std::size_t which_window); // Goto beginning of current page
+    void Act_PageEnd(std::size_t which_window); // Goto end of current page
+    void Act_DeleteCurChar(std::size_t which_window); // delete
+    void Act_DeletePrevChar(std::size_t which_window); // backspace (left+delete);
+    void Act_DeleteCurLine(std::size_t which_window);
+    void Act_Tab(std::size_t which_window);
+    void Act_NewLine(std::size_t which_window);
+    void Act_InsertCharacter(std::size_t which_window, char32_t ch);
+    void Act_LineAskGo(std::size_t which_window);
+    void Act_NewAsk();
+    void Act_LoadAsk();
+    void Act_SaveAsk(bool ask_always = true);
+    bool Act_AbandonAsk(const std::string& action);
+
+    void Act_Refresh(bool cursor_only = false);
+
+    std::pair<std::string, bool> PromptText(const std::basic_string<char32_t>& prompt) const;
 };

@@ -93,5 +93,6 @@ struct AttrType
 
 static constexpr AttrType UnknownColor   = AttrType{'\4',  '\2'};
 static constexpr AttrType AttrParseError = AttrType{'\12', '\4'};
+static constexpr AttrType BlankColor     = AttrType{'\7',  '\0'};
 
 #endif

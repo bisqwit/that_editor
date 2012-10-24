@@ -5,26 +5,22 @@
 static const char DigitBufUp[16] = {'0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F'};
 static const char DigitBufLo[16] = {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
 
-template<typename C>
-void PrintfFormatter::MakeFrom(const std::basic_string<C>& format)
+template<typename CT>
+void PrintfFormatter::MakeFrom(const std::basic_string<CT>& format)
 {
     for(std::size_t b = format.size(), a = 0; a < b; ++a)
     {
-        C c = format[a];
+        CT c = format[a];
         if(c == '%')
         {
             std::size_t percent_begin = a;
 
             arg argument;
 
-            if(a < format.size() && format[a] == '-')
-                { argument.leftalign = true; ++a; }
-            if(a < format.size() && format[a] == '+')
-                { argument.sign      = true; ++a; }
-            if(a < format.size() && format[a] == '0')
-                { argument.zeropad   = true; ++a; }
-            if(a < format.size() && format[a] == '*')
-                { argument.param_minwidth = true; ++a; }
+            if(a < format.size() && format[a] == '-') { argument.leftalign = true; ++a; }
+            if(a < format.size() && format[a] == '+') { argument.sign      = true; ++a; }
+            if(a < format.size() && format[a] == '0') { argument.zeropad   = true; ++a; }
+            if(a < format.size() && format[a] == '*') { argument.param_minwidth = true; ++a; }
             else while(a < format.size() && (format[a] >= '0' && format[a] <= '9'))
                 argument.min_width = argument.min_width*10 + (format[a++] - '0');
 
@@ -37,8 +33,11 @@ void PrintfFormatter::MakeFrom(const std::basic_string<C>& format)
                     argument.max_width = argument.max_width*10 + (format[a++] - '0');
             }
 
+       another_formatchar:
+            if(a >= format.size()) goto invalid_format;
             switch(format[a++])
             {
+                case 'l': goto another_formatchar; // ignore 'l'
                 case 'S':
                 case 's': argument.format = arg::as_string; break;
                 case 'C':
@@ -54,8 +53,10 @@ void PrintfFormatter::MakeFrom(const std::basic_string<C>& format)
                 case 'i':
                 case 'd': argument.format = arg::as_int; break;
                 case 'g':
+                case 'e':
                 case 'f': argument.format = arg::as_float; break;
                 default:
+            invalid_format:
                     a = percent_begin;
                     trail += '%';
                     continue;
@@ -107,18 +108,15 @@ namespace
     template<typename T> class Categorize<T,false,true>: public std::integral_constant<int,2> { };
 
     // 3 = character pointers
-    template<bool i,bool f> class Categorize<const char*,i,f>: public std::integral_constant<int,3> { };
-    template<bool i,bool f> class Categorize<const wchar_t*,i,f>: public std::integral_constant<int,3> { };
-    template<bool i,bool f> class Categorize<const char16_t*,i,f>: public std::integral_constant<int,3> { };
-    template<bool i,bool f> class Categorize<const char32_t*,i,f>: public std::integral_constant<int,3> { };
-    template<bool i,bool f> class Categorize<const unsigned char*,i,f>: public std::integral_constant<int,3> { };
+    template<> class Categorize<const char*,false,false>: public std::integral_constant<int,3> { };
+    template<> class Categorize<const wchar_t*,false,false>: public std::integral_constant<int,3> { };
+    template<> class Categorize<const char16_t*,false,false>: public std::integral_constant<int,3> { };
+    template<> class Categorize<const char32_t*,false,false>: public std::integral_constant<int,3> { };
+    template<> class Categorize<const unsigned char*,false,false>: public std::integral_constant<int,3> { };
 
     // 4 = strings
-    template<bool i,bool f> class Categorize<std::basic_string<char>,i,f>: public std::integral_constant<int,4> { };
-    template<bool i,bool f> class Categorize<std::basic_string<wchar_t>,i,f>: public std::integral_constant<int,4> { };
-    template<bool i,bool f> class Categorize<std::basic_string<char16_t>,i,f>: public std::integral_constant<int,4> { };
-    template<bool i,bool f> class Categorize<std::basic_string<char32_t>,i,f>: public std::integral_constant<int,4> { };
-    template<bool i,bool f> class Categorize<std::basic_string<unsigned char>,i,f>: public std::integral_constant<int,4> { };
+    template<typename T> class Categorize<std::basic_string<T>,false,false>: public std::integral_constant<int,4> { };
+
 
     template<typename T, int category = Categorize<typename std::remove_cv<
                                                    typename std::remove_reference<T>::type>::type
@@ -126,19 +124,19 @@ namespace
     struct PrintfFormatDo { };
 
     template<typename T>
-    struct PrintfFormatDo<T, 1>
+    struct PrintfFormatDo<T, 1> // ints
     {
         static void Do(PrintfFormatter::argsmall& arg, std::basic_string<char32_t> & result, T part);
         static T IntValue(T part) { return part; }
     };
     template<typename T>
-    struct PrintfFormatDo<T, 2>
+    struct PrintfFormatDo<T, 2> // floats
     {
         static void Do(PrintfFormatter::argsmall& arg, std::basic_string<char32_t> & result, T part);
         static long long IntValue(T part) { return part; }
     };
     template<typename T>
-    struct PrintfFormatDo<T, 3>
+    struct PrintfFormatDo<T, 3> // char-pointers
     {
         typedef typename std::remove_cv<
                 typename std::remove_reference<
@@ -150,7 +148,7 @@ namespace
         static long long IntValue(T part);
     };
     template<typename T>
-    struct PrintfFormatDo<T, 4>
+    struct PrintfFormatDo<T, 4> // strings
     {
         typedef typename T::value_type ctype;
 
@@ -165,17 +163,15 @@ namespace
         switch(arg.format)
         {
             case PrintfFormatter::argsmall::as_char:
-            {
                 // Interpret as character
                 PrintfFormatDo<std::basic_string<char32_t>>::Do(
                     arg, result,
                     std::basic_string<char32_t>( std::size_t(1), char32_t(part) ));
                 break;
-            }
+
             case PrintfFormatter::argsmall::as_string:
             case PrintfFormatter::argsmall::as_int:
             case PrintfFormatter::argsmall::as_float:
-            {
                 std::string s;
                 // Use this contrived expression rather than "part < 0"
                 // to avoid a compiler warning about expression being always false
@@ -204,7 +200,6 @@ namespace
                 arg.max_width = ~0u;
                 PrintfFormatDo<const char*>::DoString(arg, result, s.data(), s.size());
                 break;
-            }
         }
     }
 
@@ -215,26 +210,25 @@ namespace
         switch(arg.format)
         {
             case PrintfFormatter::argsmall::as_char:
-            {
                 // Cast into integer, and interpret as character
                 // Interpret as character
                 PrintfFormatDo<std::basic_string<char32_t>>::Do(
                     arg, result,
                     std::basic_string<char32_t>( std::size_t(1), char32_t(part) ) );
                 break;
-            }
+
             case PrintfFormatter::argsmall::as_int:
-            {
                 // Cast into integer, and interpret
                 PrintfFormatDo<long long>::Do(
                     arg, result,
                     (long long)(part) );
                 break;
-            }
+
             case PrintfFormatter::argsmall::as_string:
             case PrintfFormatter::argsmall::as_float:
-            {
                 // Print float
+                // TODO: Handle different formatting styles (exponents, automatic precisions etc.)
+                //       better than this.
                 std::stringstream s;
                 if(!(part < 0) && arg.sign) s << '+';
                 s << std::setprecision( arg.max_width);
@@ -243,7 +237,6 @@ namespace
                 std::string s2 = s.str();
                 PrintfFormatDo<const char*>::DoString(arg, result, s2.data(), s2.size());
                 break;
-            }
         }
     }
 
@@ -251,24 +244,24 @@ namespace
     void PrintfFormatDo<T,3>::Do(PrintfFormatter::argsmall& arg, std::basic_string<char32_t> & result, T part)
     {
         // Character pointer version
+        std::size_t length = 0;
+        for(const ctype* p = part; *p; ++p) ++length;
+
         switch(arg.format)
         {
             case PrintfFormatter::argsmall::as_char:
             case PrintfFormatter::argsmall::as_string:
-            {
-                std::size_t length = 0;
-                for(const ctype* p = part; *p; ++p) ++length;
                 // Do with a common function for char* and basic_string
                 DoString(arg, result, part, length);
                 break;
-            }
+
             case PrintfFormatter::argsmall::as_int:
             case PrintfFormatter::argsmall::as_float:
                 // Cast string into integer!
                 // Delegate it...
                 PrintfFormatDo<std::basic_string<ctype>>::Do(
                     arg, result,
-                    std::basic_string<ctype>(part) );
+                    std::basic_string<ctype>(part, length) );
                 break;
         }
     }
@@ -312,19 +305,16 @@ namespace
         {
             case PrintfFormatter::argsmall::as_char:
             case PrintfFormatter::argsmall::as_string:
-            {
                 // Do with a common function for char* and basic_string
                 PrintfFormatDo<const ctype*>::DoString(arg, result, part.data(), part.size() );
                 break;
-            }
+
             case PrintfFormatter::argsmall::as_int:
-            {
                 // Cast string into integer!
                 PrintfFormatDo<long long>::Do(arg, result, IntValue(part));
                 break;
-            }
-            case PrintfFormatter::argsmall::as_float:
-            {
+
+            case PrintfFormatter::argsmall::as_float:;
                 // Cast string into float!
                 std::basic_stringstream<ctype> s;
                 double d = 0.;
@@ -332,7 +322,6 @@ namespace
                 s >> d;
                 PrintfFormatDo<double>::Do(arg, result, d);
                 break;
-            }
         }
     }
 

@@ -286,18 +286,3 @@ std::vector< std::pair<std::string, JSF::option::stringopt> >::const_iterator
         return stringtable.end();
     return i;
 }
-
-char JSF::UnicodeToASCIIapproximation(char32_t ch)
-{
-    // Convert an unicode character into an ASCII character representing
-    // the approximate shape and function of the character
-
-    // TODO: Extend
-    if(ch < 256)   return ch;
-    if(ch < 0x2B0) return 'a';
-    if(ch < 0x370) return ' ';
-    if(ch < 0x2B0) return 'a';
-
-    return '?';
-}
-

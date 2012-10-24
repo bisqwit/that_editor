@@ -1,75 +1,8 @@
 #include <chrono>
 
 #include "editor.hh"
-
-extern double CPUinfo(); // FIXME
-
-void Editor::TryUndo()
-{
-    if(!UndoQueue.UndoQueue.empty())
-    {
-        UndoEvent event = std::move(UndoQueue.UndoQueue.back());
-        UndoQueue.UndoQueue.pop_back();
-        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 1);
-    }
-}
-void Editor::TryRedo()
-{
-    if(!UndoQueue.RedoQueue.empty())
-    {
-        UndoEvent event = std::move(UndoQueue.RedoQueue.back());
-        UndoQueue.RedoQueue.pop_back();
-        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 2);
-    }
-}
-
-void Editor::BlockIndent(int offset)
-{
-    std::size_t firsty = BlockBegin.y, lasty = BlockEnd.y;
-    if(BlockEnd.x == 0) lasty -= 1;
-
-    std::size_t min_indent = ~std::size_t(0), max_indent = 0;
-    for(std::size_t y=firsty; y<=lasty; ++y)
-    {
-        std::size_t indent = 0;
-        while(indent < EditLines[y].size() && EditLines[y][indent].GetCh() == U' ')
-            ++indent;
-        if(EditLines[y][indent].GetCh() == InternalNewline) continue;
-        if(indent < min_indent) min_indent = indent;
-        if(indent > max_indent) max_indent = indent;
-    }
-    if(offset > 0)
-    {
-        std::vector<Cell> indentbuf{ (unsigned)offset, Cell{' '}};
-        for(std::size_t y = firsty; y <= lasty; ++y)
-        {
-            std::size_t indent = 0;
-            while(indent < EditLines[y].size() && EditLines[y][indent].GetCh() == U' ')
-                ++indent;
-            if(EditLines[y][indent].GetCh() == InternalNewline) continue;
-            PerformEdit(0u,y, 0u, indentbuf);
-        }
-        if(BlockBegin.x > 0) BlockBegin.x += offset;
-        if(BlockEnd.x   > 0) BlockEnd.x   += offset;
-    }
-    else if(min_indent >= (unsigned)-offset)
-    {
-        unsigned outdent = -offset;
-        std::vector<Cell> empty;
-
-        for(std::size_t y=firsty; y<=lasty; ++y)
-        {
-            std::size_t indent = 0;
-            while(indent < EditLines[y].size() && EditLines[y][indent].GetCh() == U' ')
-                ++indent;
-            if(EditLines[y][indent].GetCh() == InternalNewline) continue;
-            if(indent < outdent) continue;
-            PerformEdit(0u,y, outdent, empty);
-        }
-        if(BlockBegin.x >= outdent) BlockBegin.x -= outdent;
-        if(BlockEnd.x   >= outdent) BlockEnd.x   -= outdent;
-    }
-}
+#include "char32.hh"
+#include "cpuinfo.hh"
 
 void Editor::UndoQueueType::AddUndo(const UndoEvent& event)
 {
@@ -104,7 +37,7 @@ void Editor::UndoQueueType::AddRedo(const UndoEvent& event)
 void Editor::PerformEdit(
     std::size_t x, std::size_t y,
     std::size_t n_delete,
-    std::vector<Cell> insert_chars,
+    const std::vector<Cell>& insert_chars,
     unsigned char DoingUndo)
 {
     std::size_t eol_x = EditLines[y].size();
@@ -315,7 +248,7 @@ std::vector<Editor::Cell> Editor::GetSelectedBlock() const
 }
 
 // Put the cursor to the corresponding parenthesis
-void Editor::FindPair(std::size_t which_window)
+void Editor::Act_FindPair(std::size_t which_window)
 {
     auto& Cur = windows[which_window].Cur;
 
@@ -360,6 +293,54 @@ void Editor::FindPair(std::size_t which_window)
             if(c == U'{' || c == U'[' || c == U'(') ++balance;
             if(c == U'}' || c == U']' || c == U')') --balance;
         }
+}
+
+void Editor::Act_BlockIndent(int offset)
+{
+    std::size_t firsty = BlockBegin.y, lasty = BlockEnd.y;
+    if(BlockEnd.x == 0) lasty -= 1;
+
+    std::size_t min_indent = ~std::size_t(0), max_indent = 0;
+    for(std::size_t y=firsty; y<=lasty; ++y)
+    {
+        std::size_t indent = 0;
+        while(indent < EditLines[y].size() && EditLines[y][indent].GetCh() == U' ')
+            ++indent;
+        if(EditLines[y][indent].GetCh() == InternalNewline) continue;
+        if(indent < min_indent) min_indent = indent;
+        if(indent > max_indent) max_indent = indent;
+    }
+    if(offset > 0)
+    {
+        std::vector<Cell> indentbuf{ (unsigned)offset, Cell{' '}};
+        for(std::size_t y = firsty; y <= lasty; ++y)
+        {
+            std::size_t indent = 0;
+            while(indent < EditLines[y].size() && EditLines[y][indent].GetCh() == U' ')
+                ++indent;
+            if(EditLines[y][indent].GetCh() == InternalNewline) continue;
+            PerformEdit(0u,y, 0u, indentbuf);
+        }
+        if(BlockBegin.x > 0) BlockBegin.x += offset;
+        if(BlockEnd.x   > 0) BlockEnd.x   += offset;
+    }
+    else if(min_indent >= (unsigned)-offset)
+    {
+        unsigned outdent = -offset;
+        std::vector<Cell> empty;
+
+        for(std::size_t y=firsty; y<=lasty; ++y)
+        {
+            std::size_t indent = 0;
+            while(indent < EditLines[y].size() && EditLines[y][indent].GetCh() == U' ')
+                ++indent;
+            if(EditLines[y][indent].GetCh() == InternalNewline) continue;
+            if(indent < outdent) continue;
+            PerformEdit(0u,y, outdent, empty);
+        }
+        if(BlockBegin.x >= outdent) BlockBegin.x -= outdent;
+        if(BlockEnd.x   >= outdent) BlockEnd.x   -= outdent;
+    }
 }
 
 void Editor::FileNew()
@@ -524,7 +505,7 @@ void Editor::FileSave(const char* fn)
     std::fclose(fp);
 
     StatusPrintf("Saved %lu bytes to %s", EditLines.size(), fn);
-    //VisRenderStatus(); TODO
+    Act_Refresh();
 
     UnsavedChanges = false;
 }
@@ -765,7 +746,6 @@ void Editor::StatusRenderTop(std::vector<Cell>& top, std::size_t which_window)
     if(ShowMHz)
     {
         Buf2 += Printf(U" %d MHz", CPUinfo()*1e-6);
-        /* TODO: FixMarioTimer() -- needed because CPUinfo() plays with PIT */
     }
 
     // X coordinate ranges for buf1 and buf2
@@ -780,19 +760,17 @@ void Editor::StatusRenderTop(std::vector<Cell>& top, std::size_t which_window)
         char c1 = slide[unsigned( xscale + Bayer[0*8 + (x&7)] )]; //background
         char c2 = slide[unsigned( xscale + Bayer[1*8 + (x&7)] )]; //foreground
         char32_t ch = 0xDC;
-        //if(C64palette) { c1 = 7; c2 = 0; ch = L' '; }
+        //if(C64palette) { c1 = 7; c2 = 0; ch = U' '; }
 
-        /**/ if(x == 0 && WaitingCtrl)                      { c2 = 0; ch = L'^'; }
+        /**/ if(x == 0 && WaitingCtrl)                      { c2 = 0; ch = U'^'; }
         else if(x == 1 && WaitingCtrl)                      { c2 = 0; ch = WaitingCtrl; }
-        else if(x == 3 && w.InsertMode)                     { c2 = 0; ch = L'I'; }
-        else if(x == 4 && UnsavedChanges)                   { c2 = 0; ch = L'*'; }
-        else if(x >= x1a && x < x1b && Buf1[x-x1a] != L' ') { c2 = 0; ch = Buf1[x-x1a]; }
-        else if(x >= x2a && x < x2b && Buf2[x-x2a] != L' ') { c2 = 0; ch = Buf2[x-x2a]; }
+        else if(x == 3 && w.InsertMode)                     { c2 = 0; ch = U'I'; }
+        else if(x == 4 && UnsavedChanges)                   { c2 = 0; ch = U'*'; }
+        else if(x >= x1a && x < x1b && Buf1[x-x1a] != U' ') { c2 = 0; ch = Buf1[x-x1a]; }
+        else if(x >= x2a && x < x2b && Buf2[x-x2a] != U' ') { c2 = 0; ch = Buf2[x-x2a]; }
 
         top[x] = Cell(ch, AttrType{c2,c1});
     }
-    /* TODO: MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
-    */
 }
 
 void Editor::StatusRenderBottom(std::vector<Cell>& bottom)
@@ -804,17 +782,17 @@ void Editor::StatusRenderBottom(std::vector<Cell>& bottom)
         char c1 = slide2[unsigned( xscale + Bayer[0*8 + (x&7)] )]; //background
         char c2 = slide2[unsigned( xscale + Bayer[1*8 + (x&7)] )]; //foreground
         char32_t ch = 0xDC;
-        //if(C64palette) { c1 = 7; c2 = 0; ch = L' '; }
+        //if(C64palette) { c1 = 7; c2 = 0; ch = U' '; }
 
-        char32_t c = x < StatusLine.size() ? StatusLine[x] : L' ';
+        char32_t c = x < StatusLine.size() ? StatusLine[x] : U' ';
 
-        if(c != L' ' || c1 == c2)
+        if(c != U' ' || c1 == c2)
         {
             c2 = 0;
             ch = c;
             if(c1 == c2) c2 = 7;
         }
-        if(/*!C64palette &&*/ c != L' ')
+        if(/*!C64palette &&*/ c != U' ')
             switch(c1)
             {
                 case 8: c2 |= 7; break;
@@ -823,4 +801,405 @@ void Editor::StatusRenderBottom(std::vector<Cell>& bottom)
 
         bottom[x] = Cell(ch, AttrType{c2,c1});
     }
+}
+
+void Editor::Act_PageDn(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    auto offset = w.Cur.y - w.Win.y;
+    w.Cur.y += w.Dim.y;
+    if(w.Cur.y >= EditLines.size()) w.Cur.y = EditLines.size()-1;
+    w.Win.y = (w.Cur.y > offset) ? w.Cur.y-offset : 0;
+}
+
+void Editor::Act_PageUp(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    auto offset = w.Cur.y - w.Win.y;
+    if(w.Cur.y > w.Dim.y) w.Cur.y -= w.Dim.y; else w.Cur.y = 0;
+    w.Win.y = (w.Cur.y > offset) ? w.Cur.y - offset : 0;
+}
+
+
+void Editor::Act_TryUndo()
+{
+    if(!UndoQueue.UndoQueue.empty())
+    {
+        UndoEvent event = std::move(UndoQueue.UndoQueue.back());
+        UndoQueue.UndoQueue.pop_back();
+        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 1);
+    }
+}
+
+void Editor::Act_TryRedo()
+{
+    if(!UndoQueue.RedoQueue.empty())
+    {
+        UndoEvent event = std::move(UndoQueue.RedoQueue.back());
+        UndoQueue.RedoQueue.pop_back();
+        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 2);
+    }
+}
+
+void Editor::Act_WindowUp(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    if(w.Win.y > 0) --w.Win.y;
+    StatusLine.clear();
+}
+
+void Editor::Act_WindowDn(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    if(w.Win.y+1/*+w.Dim.y*/ < EditLines.size()) ++w.Win.y;
+    if(w.Cur.y < w.Win.y) w.Cur.y = w.Win.y;
+    StatusLine.clear();
+}
+
+void Editor::Act_BlockMark(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    BlockBegin = w.Cur;
+    Act_Refresh();
+}
+
+void Editor::Act_BlockMarkEnd(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    BlockEnd = w.Cur;
+    Act_Refresh();
+}
+
+void Editor::Act_BlockMove(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    std::vector<Cell> block = GetSelectedBlock(), empty;
+    PerformEdit(BlockBegin.x, BlockBegin.y, block.size(), empty);
+    // Note: ^ Assumes Curx,Cury get updated here.
+    BlockEnd = w.Cur;
+    Anchor b = w.Cur;
+    PerformEdit(b.x, b.y, w.InsertMode?0u:block.size(), block);
+    BlockBegin = b;
+}
+
+void Editor::Act_BlockCopy(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    auto block = GetSelectedBlock();
+    Anchor b = w.Cur;
+    PerformEdit(w.Cur.x, w.Cur.y, w.InsertMode?0u:block.size(), block);
+    BlockBegin = b;
+    BlockEnd = w.Cur;
+}
+
+void Editor::Act_BlockDelete()
+{
+    std::vector<Cell> block = GetSelectedBlock(), empty;
+    PerformEdit(BlockBegin.x, BlockBegin.y, block.size(), empty);
+    BlockEnd = BlockBegin;
+}
+
+void Editor::Act_BlockIndent()
+{
+    Act_BlockIndent(+(int)IndentTabSize);
+}
+
+void Editor::Act_BlockUnindent()
+{
+    Act_BlockIndent(+(int)IndentTabSize);
+}
+
+void Editor::Act_CharacterInfo(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    auto charcode = EditLines[w.Cur.y][w.Cur.x].GetCh();
+    StatusPrintf(
+        w.Dim.x >= 60
+        ? U"Character '%c': hex=%02X, decimal=%d, octal=%03o"
+        : U"Character '%c': 0x%02X = %d = '\\0%03o'",
+        charcode, charcode, charcode, charcode);
+}
+
+void Editor::Act_InsertLiteralCharacter(std::size_t which_window, char32_t ch)
+{
+    auto& w = windows[which_window];
+    std::vector<Cell> txtbuf(1, Cell{ch, BlankColor});
+    PerformEdit(w.Cur.x, w.Cur.y, w.InsertMode?0u:1u, txtbuf);
+}
+
+void Editor::Act_Up(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    if(w.Cur.y > 0) --w.Cur.y;
+    if(w.Cur.y < w.Win.y) w.Win.y = w.Cur.y;
+}
+
+void Editor::Act_Dn(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    if(w.Cur.y + 1 < EditLines.size()) ++w.Cur.y;
+    if(w.Cur.y >= w.Win.y + w.Dim.y) w.Win.y = w.Cur.y - w.Dim.y + 1;
+}
+
+void Editor::Act_Home(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    // Find the end of indenting on the line:
+    std::size_t nspaces = 0;
+    while(nspaces < EditLines[w.Cur.y].size()
+       && EditLines[w.Cur.y][nspaces].GetCh() == U' ') ++nspaces;
+    // Set the cursor at that point, or if already there, in the beginning
+    w.Cur.x = (w.Cur.x != nspaces ? nspaces : 0);
+    w.Win.x = 0;
+}
+
+void Editor::Act_End(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    // Find the end of indenting on the line:
+    std::size_t eol_x = EditLines[w.Cur.y].size();
+    if(eol_x > 0 && EditLines[w.Cur.y][eol_x-1].GetCh() == InternalNewline) --eol_x;
+    w.Cur.x = eol_x;
+    w.Win.x = 0;
+}
+
+void Editor::Act_Left(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    if(w.Cur.x >= EditLines[w.Cur.y].size())
+        w.Cur.x = EditLines[w.Cur.y].size()-1;
+    else if(w.Cur.x > 0) { --w.Cur.x; }
+    else if(w.Cur.y > 0) { --w.Cur.y; Act_End(which_window); }
+}
+
+void Editor::Act_Right(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    if(w.Cur.x+1 < EditLines[w.Cur.y].size())
+        ++w.Cur.x;
+    else if(w.Cur.y+1 < EditLines.size())
+    {
+        // Pressing 'right' at the end of the line goes to
+        // column 0 of the next line (NOT the same as 'home').
+        w.Cur.x = 0;
+        ++w.Cur.y;
+    }
+}
+
+void Editor::Act_WordLeft(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    Act_Left(which_window);
+    do Act_Left(which_window);
+    while( (w.Cur.x > 0 || w.Cur.y > 0)
+          && isalnum(EditLines[w.Cur.y][w.Cur.x].GetCh())
+           );
+    Act_Right(which_window);
+}
+
+void Editor::Act_WordRight(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    while( w.Cur.y < EditLines.size()
+        && w.Cur.x < EditLines[w.Cur.y].size()
+        && isalnum(EditLines[w.Cur.y][w.Cur.x].GetCh()) )
+        Act_Right(which_window);
+    do Act_Right(which_window);
+    while( w.Cur.y < EditLines.size()
+        && w.Cur.x < EditLines[w.Cur.y].size()
+        && !isalnum(EditLines[w.Cur.y][w.Cur.x].GetCh()) );
+}
+
+void Editor::Act_ToggleInsert(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    w.InsertMode = !w.InsertMode;
+    Act_Refresh(true);
+}
+
+void Editor::Act_HomeHome(std::size_t which_window) // Goto beginning of file
+{
+    auto& w = windows[which_window];
+    w.Cur = w.Win = Anchor();
+}
+
+void Editor::Act_EndEnd(std::size_t which_window) // Goto end of file
+{
+    auto& w = windows[which_window];
+    w.Cur.y = EditLines.size()-1;
+    w.Win.y = 0;
+    if(w.Cur.y >= w.Win.y+w.Dim.y) w.Win.y = w.Cur.y - w.Dim.y + 1;
+}
+
+void Editor::Act_PageHome(std::size_t which_window) // Goto beginning of current page
+{
+    auto& w = windows[which_window];
+    w.Cur.y = w.Win.y;
+}
+
+void Editor::Act_PageEnd(std::size_t which_window) // Goto end of current page
+{
+    auto& w = windows[which_window];
+    w.Cur.y = w.Win.y + w.Dim.y-1;
+}
+
+void Editor::Act_DeleteCurChar(std::size_t which_window) // delete
+{
+    auto& w = windows[which_window];
+    std::size_t eol_x = EditLines[w.Cur.y].size();
+    if(eol_x > 0 && EditLines[w.Cur.y][eol_x-1].GetCh() == InternalNewline) --eol_x;
+    if(w.Cur.x > eol_x) { w.Cur.x = eol_x; return; } // Just do an end-key
+    std::vector<Cell> empty;
+    PerformEdit(w.Cur.x, w.Cur.y, 1u, empty);
+    UndoQueue.UndoAppendOk = true;
+}
+
+void Editor::Act_DeletePrevChar(std::size_t which_window) // backspace (left+delete)
+{
+    auto& w = windows[which_window];
+    std::vector<Cell> empty;
+    std::size_t nspaces = 0;
+    while(nspaces < EditLines[w.Cur.y].size()
+       && EditLines[w.Cur.y][nspaces].GetCh() == U' ') ++nspaces;
+    if(nspaces > 0 && w.Cur.x == nspaces)
+    {
+        // Delete one indent step
+        nspaces = 1 + (w.Cur.x-1) % IndentTabSize;
+        w.Cur.x -= nspaces;
+        PerformEdit(w.Cur.x, w.Cur.y, nspaces, empty);
+    }
+    else
+    {
+        Act_Left(which_window);
+        Act_DeleteCurChar(which_window);
+    }
+    UndoQueue.UndoAppendOk = true;
+}
+
+
+void Editor::Act_DeleteCurLine(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    w.Cur.x = 0;
+    std::vector<Cell> empty;
+    PerformEdit(w.Cur.x, w.Cur.y, EditLines[w.Cur.y].size(), empty);
+}
+
+void Editor::Act_Tab(std::size_t which_window)
+{
+    // Tab: Insert spaces until next indent stop
+    auto& w = windows[which_window];
+    std::size_t nspaces = IndentTabSize - w.Cur.x % IndentTabSize;
+    std::vector<Cell> txtbuf(nspaces, Cell{U' ', BlankColor});
+    PerformEdit(w.Cur.x, w.Cur.y, w.InsertMode?0u:nspaces, txtbuf);
+}
+
+void Editor::Act_NewLine(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+    std::size_t nspaces = 0;
+    if(w.InsertMode)
+    {
+        // Autoindent only in insert mode
+        std::size_t nspaces = 0;
+        while(nspaces < EditLines[w.Cur.y].size()
+           && EditLines[w.Cur.y][nspaces].GetCh() == U' ') ++nspaces;
+        if(w.Cur.x < nspaces) nspaces = w.Cur.x;
+    }
+    std::vector<Cell> txtbuf(nspaces+1, Cell{U' ', BlankColor});
+    txtbuf[0].SetCh(InternalNewline);
+    PerformEdit(w.Cur.x, w.Cur.y, w.InsertMode?0u:1u, txtbuf);
+    //w.Win.x = 0;
+    UndoQueue.UndoAppendOk = true;
+}
+
+void Editor::Act_InsertCharacter(std::size_t which_window, char32_t ch)
+{
+    auto& w = windows[which_window];
+    std::vector<Cell> txtbuf(1, Cell{ch, BlankColor});
+    PerformEdit(w.Cur.x, w.Cur.y, w.InsertMode?0u:1u, txtbuf);
+    UndoQueue.UndoAppendOk = true;
+}
+
+// TODO: Exit
+// TODO: Font & resize functoins
+
+void Editor::Act_Refresh(bool cursor_only)
+{
+    // TODO
+}
+
+void Editor::Act_LineAskGo(std::size_t which_window)
+{
+    auto& w = windows[which_window];
+
+    char Buf[64];
+    std::sprintf(Buf, "%lu", (unsigned long) w.Cur.y + 1);
+
+    auto p = PromptText(U"Goto line:", Buf);
+    Act_Refresh();
+    if(!p.second) return;
+    long l = std::strtol(p.first.c_str(), nullptr, 10) - 1;
+    std::size_t oldy = w.Cur.y;
+    w.Cur.x = 0;
+    w.Cur.y = l>=0 ? l : 0;
+    if(w.Cur.y >= EditLines.size()) w.Cur.y = EditLines.size()-1;
+    if(w.Win.y > w.Cur.y || w.Win.y + w.Dim.y <= w.Cur.y)
+    {
+        w.Win.y = w.Cur.y > oldy
+            ? (w.Cur.y > (w.Dim.y/2)
+                ? w.Cur.y - (w.Dim.y/2)
+                : 0)
+            : w.Cur.y;
+    }
+    w.Win.x = 0;
+    Act_Refresh();
+}
+
+void Editor::Act_LoadAsk()
+{
+    if(Act_AbandonAsk("FILE OPEN"))
+    {
+        auto p = PromptText(U"Load what:", CurrentFileName);
+        Act_Refresh();
+        if(!p.second) return;
+        FileLoad(p.first.c_str());
+    }
+}
+
+void Editor::Act_NewAsk()
+{
+    if(Act_AbandonAsk("START ANEW"))
+    {
+        FileNew();
+    }
+}
+
+void Editor::Act_SaveAsk(bool ask_always)
+{
+    if(ask_always || CurrentFileName.empty())
+    {
+        auto p = PromptText(U"Save to:", CurrentFileName);
+        Act_Refresh();
+        if(!p.second) return;
+        FileSave(p.first.c_str());
+    }
+    else
+        FileSave(CurrentFileName.c_str());
+}
+
+bool Editor::Act_AbandonAsk(const std::string& action)
+{
+    if(!UnsavedChanges) return true;
+    auto p = PromptText(Printf(U"FILE IS UNSAVED. PROCEED WITH %s? Y/N ", action));
+    Act_Refresh();
+    if(!p.second) return false;
+    // TODO: Change into StatusPrintf and wait for just one key press without enter.
+    return p.first == U"Y" || p.first == U"y";
+}
+
+std::pair<std::string, bool>
+    Editor::PromptText(const std::basic_string<char32_t>& prompt) const
+{
+    // TODO
 }

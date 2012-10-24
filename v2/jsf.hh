@@ -7,6 +7,7 @@
 #include <string>
 
 #include "attr.hh"
+#include "char32.hh"
 
 /* JSF file parser and applier
  * JSF = Joe Syntax Format.
@@ -132,8 +133,6 @@ private:
 
         option() {}
     };
-
-    static char UnicodeToASCIIapproximation(char32_t ch);
 };
 
 #endif

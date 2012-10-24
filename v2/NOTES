@@ -12,3 +12,9 @@ In WaitInput,
 	Note special save-restore handling for soft-cursor.
 	
 
+After CPUinfo(); need a call to FixMarioTimer because CPUinfo plays with PIT
+
+In StatusRenderTop(), needs MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW)
+
+
+C64mode, Fatmode missing
