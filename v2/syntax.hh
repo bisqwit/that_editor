@@ -76,7 +76,7 @@ public:
 
     // Guess which .jsf file is best choice for the given file,
     // and load that one.
-    void LoadForFile(const std::string& fn);
+    void LoadForFile(const std::string& fn, bool quiet = false);
 
     struct ApplyState
     {

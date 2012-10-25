@@ -1,4 +1,7 @@
-#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+
+#include <ctime>
 
 #include "editor.hh"
 #include "char32.hh"
@@ -733,9 +736,10 @@ void Editor::StatusRenderTop(std::vector<Cell>& top, std::size_t which_window)
     bool ShowFilename = Width > 60;
     bool ShowMHz      = Width >= 65;
 
-    auto tp = std::chrono::system_clock::now();
-    auto t = std::chrono::system_clock::to_time_t(tp);
+    auto t = std::time(nullptr);
     const auto* tm = std::localtime(&t);
+    // ^Note: would use std::chrono, but not supported well
+    //        by DJGPP yet as of GCC 4.7.2
 
     auto Buf1 = Printf(U"%s%sRow %-5u/%u Col %-5u",
         ShowFilename?CurrentFilenameWithoutPath:"",

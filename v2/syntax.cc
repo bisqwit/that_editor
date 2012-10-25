@@ -1,8 +1,22 @@
 #include <cstring>
 #include <map>
 #include <algorithm>
+#include <vector>
 
 #include "syntax.hh"
+
+static const std::vector<std::pair<std::string, std::string>>
+    JSF_AutoDetections
+{
+    { "Makefile", "conf.jsf" },
+    { ".mak",     "conf.jsf" },
+    { ".c",       "c.jsf" },
+    { ".h",       "c.jsf" },
+    { ".cc",      "c.jsf" },
+    { ".hh",      "c.jsf" },
+    { ".cpp",     "c.jsf" },
+    { "",         "c.jsf" }
+};
 
 // Remove comments and trailing space from the buffer
 static void cleanup(char* Buf)
@@ -23,8 +37,21 @@ static void cleanup(char* Buf)
     *end = '\0';
 }
 
-void JSF::LoadForFile(const std::string& fn)
+static bool StrEndCompare(const std::string& part, const std::string& full)
 {
+    return part.size() >= full.size()
+        && full.compare(full.size()-part.size(), part.size(),
+                        part, 0, part.size()) == 0;
+}
+
+void JSF::LoadForFile(const std::string& fn, bool quiet)
+{
+    for(const auto& l: JSF_AutoDetections)
+        if(StrEndCompare(fn, l.first))
+        {
+            Parse(l.second, quiet);
+            return;
+        }
 }
 
 void JSF::Parse(const std::string& fn, bool quiet)
@@ -198,10 +225,10 @@ void JSF::Parse(std::FILE* fp, bool quiet)
 
                         line = Buf;
                         while(*line == ' ' || *line == '\t') ++line;
-                        if(strcmp(line, "done") == 0) break;
+                        if(std::strcmp(line, "done") == 0) break;
                         if(*line == '"') ++line;
 
-                        char* key_begin = line = strdup(line);
+                        char* key_begin = line;
                         while(*line != '"' && *line != '\0') ++line;
                         char* key_end   = line;
                         if(*line == '"') ++line;
