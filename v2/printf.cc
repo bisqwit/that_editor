@@ -37,7 +37,8 @@ void PrintfFormatter::MakeFrom(const std::basic_string<CT>& format)
             if(a >= format.size()) goto invalid_format;
             switch(format[a++])
             {
-                case 'l': goto another_formatchar; // ignore 'l'
+                case 'z':
+                case 'l': goto another_formatchar; // ignore 'l' or 'z'
                 case 'S':
                 case 's': argument.format = arg::as_string; break;
                 case 'C':
@@ -51,6 +52,7 @@ void PrintfFormatter::MakeFrom(const std::basic_string<CT>& format)
                 case 'b': argument.base   = arg::bin;
                           argument.format = arg::as_int; break;
                 case 'i':
+                case 'u':
                 case 'd': argument.format = arg::as_int; break;
                 case 'g':
                 case 'e':
@@ -112,6 +114,7 @@ namespace
     template<> class Categorize<const wchar_t*,false,false>: public std::integral_constant<int,3> { };
     template<> class Categorize<const char16_t*,false,false>: public std::integral_constant<int,3> { };
     template<> class Categorize<const char32_t*,false,false>: public std::integral_constant<int,3> { };
+    template<> class Categorize<const signed char*,false,false>: public std::integral_constant<int,3> { };
     template<> class Categorize<const unsigned char*,false,false>: public std::integral_constant<int,3> { };
 
     // 4 = strings
@@ -163,11 +166,12 @@ namespace
         switch(arg.format)
         {
             case PrintfFormatter::argsmall::as_char:
+            {
                 // Interpret as character
-                PrintfFormatDo<std::basic_string<char32_t>>::Do(
-                    arg, result,
-                    std::basic_string<char32_t>( std::size_t(1), char32_t(part) ));
+                char32_t n = part;
+                PrintfFormatDo<const char32_t*>::DoString(arg, result, &n, 1);
                 break;
+            }
 
             case PrintfFormatter::argsmall::as_string:
             case PrintfFormatter::argsmall::as_int:
@@ -210,13 +214,12 @@ namespace
         switch(arg.format)
         {
             case PrintfFormatter::argsmall::as_char:
+            {
                 // Cast into integer, and interpret as character
-                // Interpret as character
-                PrintfFormatDo<std::basic_string<char32_t>>::Do(
-                    arg, result,
-                    std::basic_string<char32_t>( std::size_t(1), char32_t(part) ) );
+                char32_t n = part;
+                PrintfFormatDo<const char32_t*>::DoString(arg, result, &n, 1);
                 break;
-
+            }
             case PrintfFormatter::argsmall::as_int:
                 // Cast into integer, and interpret
                 PrintfFormatDo<long long>::Do(
@@ -404,6 +407,8 @@ void PrintfFormatter::ExecutePart(PrintfFormatter::State& state, T part)
 }
 
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, char);
+template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, char16_t);
+template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, char32_t);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, short);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, int);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, long);
@@ -416,7 +421,7 @@ template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, unsigned lon
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, bool);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, float);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, double);
-template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, const char* );
+template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, const char*);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, const std::string&);
 template void PrintfFormatter::ExecutePart(PrintfFormatter::State&, const std::basic_string<char32_t>&);
 

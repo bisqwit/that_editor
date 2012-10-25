@@ -43,6 +43,11 @@ static constexpr unsigned short XtermToRGB15(unsigned r,unsigned g,unsigned b)
     return RGBtoRGB15( Xterm256Table[r], Xterm256Table[g], Xterm256Table[b] );
 }
 
+/* This is the core attribute type used in the editor.
+ * It defines the foreground color and background color
+ * in 15-bit RGB (5 bits per channel)
+ * And two bits for text decoration, such as underline.
+ */
 struct AttrType
 {
     union
@@ -59,27 +64,32 @@ struct AttrType
         RegBitSet<25, 5, uint_least32_t> bg_red;
     } data;
 
+    /* Construct with EGA colors */
     constexpr AttrType(char fg, char bg)
         : AttrType( EGAtoRGB15(fg), EGAtoRGB15(bg) )
     {
     }
 
+    /* Construct with RGB15 colors */
     constexpr AttrType(unsigned short fg, unsigned short bg, unsigned char und = 0)
         : data{ (unsigned)fg + (unsigned)( unsigned(bg) << 15 ) + (unsigned)( unsigned(und) << 30 ) }
     {
     }
 
+    /* Construct with RGB24 colors */
     constexpr AttrType(unsigned fg, unsigned bg)
         : AttrType( RGBtoRGB15(fg), RGBtoRGB15(bg) )
     {
     }
 
+    /* Construct with default colors */
     constexpr AttrType() : AttrType('\4', '\2')
     {
     }
 
     static AttrType ParseJSFattribute(char* line);
 
+    /* Comparisons. */
     bool operator==(const AttrType& b) const
     {
         return data.as_int == b.data.as_int;

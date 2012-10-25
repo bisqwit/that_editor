@@ -1,9 +1,12 @@
 #include <vector>
 #include <string>
 
-#include "jsf.hh"
+#include "syntax.hh"
 #include "printf.hh"
 #include "attr.hh"
+
+#define DefaultStatusLine \
+    U"Ad-hoc programming editor - (C) 2012-10-22 Joel Yliluoma"
 
 class Editor
 {
@@ -54,8 +57,8 @@ class Editor
     char32_t InternalNewline = U'\n';
 
     void FileNew();
-    void FileLoad(const char* fn);
-    void FileSave(const char* fn);
+    bool FileLoad(const char* fn);
+    bool FileSave(const char* fn);
     void FileCountCharacters();
 
     /*** Undo and redo ***/
@@ -103,7 +106,7 @@ class Editor
         {
             std::size_t x;
             std::size_t y;
-        } Dim;
+        } Dim, Origin;
 
         // Ensure that the cursor is visible within the window
         void AdjustCursor(bool center = false);
@@ -129,8 +132,6 @@ class Editor
 
     ////////////
     // Number of characters in the file
-    static constexpr char32_t DefaultStatusLine[] = U"Ad-hoc programming editor - (C) 2012-10-22 Joel Yliluoma";
-
     std::basic_string<char32_t> StatusLine = DefaultStatusLine;
     bool        UnsavedChanges  = false;
     char        WaitingCtrl   = 0;
@@ -183,8 +184,6 @@ class Editor
     void Act_PageUp(std::size_t which_window);
     void Act_TryUndo();
     void Act_TryRedo();
-
-
     void Act_WindowUp(std::size_t which_window);
     void Act_WindowDn(std::size_t which_window);
     void Act_BlockMark(std::size_t which_window);
@@ -216,10 +215,13 @@ class Editor
     void Act_NewLine(std::size_t which_window);
     void Act_InsertCharacter(std::size_t which_window, char32_t ch);
     void Act_LineAskGo(std::size_t which_window);
-    void Act_NewAsk();
-    void Act_LoadAsk();
+    void Act_NewAsk(std::size_t which_window);
+    void Act_LoadAsk(std::size_t which_window);
     void Act_SaveAsk(bool ask_always = true);
     bool Act_AbandonAsk(const std::string& action);
+    void Act_SplitWindow(std::size_t which_window, bool sidebyside);
+    void Act_CloseWindow(std::size_t which_window);
+    void Act_ReloadSyntaxColor(const std::string& jsf_filename);
 
     void Act_Refresh(bool cursor_only = false);
 

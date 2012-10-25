@@ -360,7 +360,7 @@ void Editor::FileNew()
     FileCountCharacters();
 }
 
-void Editor::FileLoad(const char* fn)
+bool Editor::FileLoad(const char* fn)
 {
     std::fprintf(stderr, "Loading '%s'...\n", fn);
 
@@ -368,7 +368,7 @@ void Editor::FileLoad(const char* fn)
     if(!fp)
     {
         std::perror(fn);
-        return;
+        return false;
     }
 
     EditLines.clear();
@@ -457,15 +457,19 @@ void Editor::FileLoad(const char* fn)
 
     // Count the number of characters in the file
     FileCountCharacters();
+
+    SyntaxColorer.LoadForFile(CurrentFilename);
+
+    return true;
 }
 
-void Editor::FileSave(const char* fn)
+bool Editor::FileSave(const char* fn)
 {
     std::FILE* fp = std::fopen(fn, "wb");
     if(!fp)
     {
         std::perror(fn);
-        return;
+        return false;
     }
     enum { CR = 13, LF = 10, TAB = 9 };
     for(auto& l: EditLines)
@@ -508,6 +512,7 @@ void Editor::FileSave(const char* fn)
     Act_Refresh();
 
     UnsavedChanges = false;
+    return true;
 }
 
 void Editor::FileCountCharacters()
@@ -1136,7 +1141,7 @@ void Editor::Act_LineAskGo(std::size_t which_window)
     char Buf[64];
     std::sprintf(Buf, "%lu", (unsigned long) w.Cur.y + 1);
 
-    auto p = PromptText(U"Goto line:", Buf);
+    auto p = PromptText(Printf(U"Goto line:", Buf));
     Act_Refresh();
     if(!p.second) return;
     long l = std::strtol(p.first.c_str(), nullptr, 10) - 1;
@@ -1156,36 +1161,66 @@ void Editor::Act_LineAskGo(std::size_t which_window)
     Act_Refresh();
 }
 
-void Editor::Act_LoadAsk()
+void Editor::Act_LoadAsk(std::size_t which_window)
 {
     if(Act_AbandonAsk("FILE OPEN"))
     {
-        auto p = PromptText(U"Load what:", CurrentFileName);
+        auto p = PromptText(Printf(U"Load what:", CurrentFilename));
         Act_Refresh();
         if(!p.second) return;
-        FileLoad(p.first.c_str());
+
+        if(windows.size() == 1)
+        {
+            FileLoad(p.first.c_str());
+        }
+        else
+        {
+            Window w = windows[which_window]; // Make copy
+            Editor new_editor;
+            if(new_editor.FileLoad(p.first.c_str()))
+            {
+                // If the new editor successfully loaded this file,
+                // close the window from this editor, and assign
+                // it to the new one.
+                Act_CloseWindow(which_window);
+                new_editor.windows.push_back(w);
+                // TODO: assign this editor to the global list of editors
+            }
+        }
     }
 }
 
-void Editor::Act_NewAsk()
+void Editor::Act_NewAsk(std::size_t which_window)
 {
     if(Act_AbandonAsk("START ANEW"))
     {
-        FileNew();
+        if(windows.size() == 1)
+            FileNew();
+        else
+        {
+            Window w = windows[which_window]; // Make copy
+            Editor new_editor;
+            new_editor.FileNew();
+            // Close the window from this editor, and assign
+            // it to the new one.
+            Act_CloseWindow(which_window);
+            new_editor.windows.push_back(w);
+            // TODO: assign this editor to the global list of editors
+        }
     }
 }
 
 void Editor::Act_SaveAsk(bool ask_always)
 {
-    if(ask_always || CurrentFileName.empty())
+    if(ask_always || CurrentFilename.empty())
     {
-        auto p = PromptText(U"Save to:", CurrentFileName);
+        auto p = PromptText(Printf(U"Save to:", CurrentFilename));
         Act_Refresh();
         if(!p.second) return;
         FileSave(p.first.c_str());
     }
     else
-        FileSave(CurrentFileName.c_str());
+        FileSave(CurrentFilename.c_str());
 }
 
 bool Editor::Act_AbandonAsk(const std::string& action)
@@ -1195,7 +1230,43 @@ bool Editor::Act_AbandonAsk(const std::string& action)
     Act_Refresh();
     if(!p.second) return false;
     // TODO: Change into StatusPrintf and wait for just one key press without enter.
-    return p.first == U"Y" || p.first == U"y";
+    return p.first == "Y" || p.first == "y";
+}
+
+void Editor::Act_SplitWindow(std::size_t which_window, bool sidebyside)
+{
+    Window& w1 = windows[which_window];
+    Window  w2 ( w1 );
+    if(sidebyside)
+    {
+        // Left-Right
+        w1.Dim.x /= 2;
+        // Leave one character-cell of margin
+        w2.Dim.x -= (w1.Dim.x+1);
+        w2.Origin.x = w1.Origin.x + w1.Dim.x + 1;
+    }
+    else
+    {
+        // Top-bottom
+        w1.Dim.y /= 2;
+        // Leave one character-cell of margin
+        w2.Dim.y -= (w1.Dim.y+1);
+        w2.Origin.y = w1.Origin.y + w1.Dim.y + 1;
+    }
+    windows.insert(windows.begin()+which_window+1, w2);
+}
+
+void Editor::Act_CloseWindow(std::size_t which_window)
+{
+    const Window& w = windows[which_window];
+}
+
+void Editor::Act_ReloadSyntaxColor(const std::string& jsf_filename)
+{
+    // Load new syntax file
+    SyntaxColorer.Parse(jsf_filename);
+    // Mark the syntax dirty for all lines, so it can be recalculated.
+    for(auto& e: EditLines) e.dirtiness |= EditLine::dirty_syntax;
 }
 
 std::pair<std::string, bool>

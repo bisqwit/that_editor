@@ -49,10 +49,19 @@ public:
     template<typename T, typename... T2>
     void Execute(State& state, const T& a, const T2&... rest)
     {
-        // TODO: Use is_trivially_copyable rather than is_pod, once GCC supports it.
+        // TODO: Use is_trivially_copyable in conjunction with sizeof,
+        //       rather than is_pod, once GCC supports it.
         // Choose the optimal manner of parameter passing:
-        typedef typename std::conditional<std::is_pod<T>::value, T, const T&>::type TT;
+        typedef
+            typename std::conditional<
+                std::is_pod<T>::value, T, const T&>::type TT;
         ExecutePart<TT>(state, a);
+        Execute(state, rest...);
+    }
+    template<typename T, std::size_t size, typename... T2>
+    void Execute(State& state, const T(& a)[size], const T2&... rest)
+    {
+        ExecutePart<const T*>(state, a);
         Execute(state, rest...);
     }
 

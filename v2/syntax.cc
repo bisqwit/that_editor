@@ -2,7 +2,7 @@
 #include <map>
 #include <algorithm>
 
-#include "jsf.hh"
+#include "syntax.hh"
 
 // Remove comments and trailing space from the buffer
 static void cleanup(char* Buf)
@@ -23,10 +23,14 @@ static void cleanup(char* Buf)
     *end = '\0';
 }
 
-void JSF::Parse(const char* fn, bool quiet)
+void JSF::LoadForFile(const std::string& fn)
 {
-    std::FILE* fp = std::fopen(fn, "rb");
-    if(!fp) { std::perror(fn); return; }
+}
+
+void JSF::Parse(const std::string& fn, bool quiet)
+{
+    std::FILE* fp = std::fopen(fn.c_str(), "rb");
+    if(!fp) { std::perror(fn.c_str()); return; }
     Parse(fp, quiet);
     std::fclose(fp);
 }
@@ -44,7 +48,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
     std::map<std::string, state*> state_cache;
 
     states.clear();
-    options.clear();
+    std::list<state::option*> options;
 
     while(std::fgets(Buf, sizeof(Buf), fp))
     {
@@ -89,7 +93,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 else
                     attr = i->second;
 
-                states.push_back( {attr, {} } );
+                states.push_back( std::move(state()) );
                 state_cache[namebegin] = &states.back();
                 break;
             }
@@ -99,9 +103,9 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 char* line = Buf;
                 while(*line == ' ' || *line == '\t') ++line;
 
-                options.push_front( {} );
+                options.push_front( new state::option );
                 auto& s = states.back(); // Current state
-                auto& o = *options.begin();
+                auto& o = *options.front();
 
                 switch(*line)
                 {
@@ -209,7 +213,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                         /*unsigned char* value_end   = (unsigned char*) line;
                         *value_end++ = '\0';*/
 
-                        option::stringopt opt;
+                        state::option::stringopt opt;
                         opt.nameptr = new std::string( value_begin );
                         o.stringtable.push_back( {key_begin, opt} );
                     }
@@ -225,16 +229,17 @@ void JSF::Parse(std::FILE* fp, bool quiet)
     }
 
     // Translate state names to state pointers.
-    for(auto& o: options)
+    for(auto o: options)
     {
-        std::string* p = o.nameptr;
-        o.stateptr    = state_cache[*p];
-        delete p;
-        for(auto& t: o.stringtable)
+        auto p = state_cache[*o->nameptr];
+        delete o->nameptr;
+        o->stateptr = p;
+
+        for(auto& t: o->stringtable)
         {
-            p = t.second.nameptr;
-            t.second.stateptr = state_cache[*p];
-            delete p;
+            p = state_cache[*t.second.nameptr];
+            delete t.second.nameptr;
+            t.second.stateptr = p;
         }
     }
 
@@ -245,7 +250,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
 }
 
 
-void JSF::option::SortStringTable()
+void JSF::state::option::SortStringTable()
 {
     if(strings==1)
         std::sort(stringtable.begin(), stringtable.end(),
@@ -264,8 +269,8 @@ void JSF::option::SortStringTable()
 }
 
 
-std::vector< std::pair<std::string, JSF::option::stringopt> >::const_iterator
-    JSF::option::SearchStringTable(const std::string& s) const
+std::vector< std::pair<std::string, JSF::state::option::stringopt> >::const_iterator
+    JSF::state::option::SearchStringTable(const std::string& s) const
 {
     auto i = (strings == 1)
         ? // Case-sensitive matching
@@ -285,4 +290,13 @@ std::vector< std::pair<std::string, JSF::option::stringopt> >::const_iterator
     if(i == stringtable.end() || i->first != s)
         return stringtable.end();
     return i;
+}
+
+JSF::state::~state()
+{
+    std::sort(std::begin(options), std::end(options));
+    option* prev = nullptr;
+    for(auto o: options)
+        if(o != prev)
+            { delete o; prev = o; }
 }
