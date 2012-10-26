@@ -384,7 +384,7 @@ bool Editor::FileLoad(const char* fn)
      * ReadCRLF:   CR LF       .
      * ReadBoth:   CR LF? | LF .
      */
-    enum { CR = 13, LF = 10, TAB = 9 };
+    enum : char32_t { CR = 13, LF = 10, TAB = 9 };
     auto MakeNewline = [&]()
     {
         // InternalNewline must always be the last Cell on the line.
@@ -404,42 +404,52 @@ bool Editor::FileLoad(const char* fn)
             CurrentLine.push_back( Cell{c} );
     };
 
-    int c;
-    // TODO: byte->char32_t conversion
-    while((c = std::fgetc(fp)) >= 0)
+    Char32Reader conv;
+    for(int c=0; c >= 0; )
     {
-        switch(InputLineStyle)
+        c = std::fgetc(fp);
+        if(c >= 0)
+            conv.Put(c);
+        else
+            conv.EndPut();
+
+        while(conv.Avail())
         {
-            case InputLineStyles::ReadCR:
-                if(c == CR) { MakeNewline(); continue; }
-                break;
-            case InputLineStyles::ReadLF:
-                if(c == LF) { MakeNewline(); continue; }
-                break;
-            case InputLineStyles::ReadCRLF: redo1:
-                if(c == CR)
-                {
-                    int c2 = std::fgetc(fp);
-                    if(c2 == LF) { MakeNewline(); continue; }
-                    // Not CRLF. Append the CR verbatim, and deal with second character.
-                    AppendCharacter(c);
-                    c = c2;
-                    goto redo1;
-                }
-                break;
-            case InputLineStyles::ReadBoth: redo2:
-                if(c == LF) { MakeNewline(); continue; }
-                if(c == CR)
-                {
-                    MakeNewline();
-                    int c2 = std::fgetc(fp);
-                    if(c2 == LF) continue;
-                    c = c2;
-                    goto redo2;
-                }
+            char32_t c = conv.Get();
+            switch(InputLineStyle)
+            {
+                case InputLineStyles::ReadCR:
+                    if(c == CR) { MakeNewline(); continue; }
+                    break;
+                case InputLineStyles::ReadLF:
+                    if(c == LF) { MakeNewline(); continue; }
+                    break;
+                case InputLineStyles::ReadCRLF: redo1:
+                    if(c == CR)
+                    {
+                        int c2 = std::fgetc(fp);
+                        if(c2 == LF) { MakeNewline(); continue; }
+                        // Not CRLF. Append the CR verbatim, and deal with second character.
+                        AppendCharacter(c);
+                        c = c2;
+                        goto redo1;
+                    }
+                    break;
+                case InputLineStyles::ReadBoth: redo2:
+                    if(c == LF) { MakeNewline(); continue; }
+                    if(c == CR)
+                    {
+                        MakeNewline();
+                        int c2 = std::fgetc(fp);
+                        if(c2 == LF) continue;
+                        c = c2;
+                        goto redo2;
+                    }
+            }
+            AppendCharacter(c);
         }
-        AppendCharacter(c);
     }
+
     // This editor forces the last character of the file be a newline.
     if(!CurrentLine.empty()) MakeNewline();
 
@@ -474,7 +484,16 @@ bool Editor::FileSave(const char* fn)
         std::perror(fn);
         return false;
     }
-    enum { CR = 13, LF = 10, TAB = 9 };
+    enum : char32_t { CR = 13, LF = 10, TAB = 9 };
+
+    Char32Writer conv;
+    auto Put = [&](char32_t c)
+    {
+        conv.Put(c);
+        while(conv.Avail())
+            std::fputc( conv.Get(), fp );
+    };
+
     for(auto& l: EditLines)
     {
         std::size_t length = l.size();
@@ -487,28 +506,18 @@ bool Editor::FileSave(const char* fn)
             // Count the number of spaces in the beginning
             while(a < length && l[a].GetCh() == U' ') ++a;
             std::size_t num_tabs = a / FileTabSize;
-            for(a = 0; a < num_tabs; ++a)
-                std::fputc( TAB, fp );
+            for(a = 0; a < num_tabs; ++a) Put(TAB);
             a *= FileTabSize;
         }
         for(; a<length; ++a)
-        {
-            char32_t c = l[a].GetCh();
-            fputc( c, fp ); //  TODO: char32_t->byte conversion
-        }
+            Put( l[a].GetCh() );
 
-        switch(OutputLineStyle)
-        {
-            case OutputLineStyles::WriteCR:
-                std::fputc( CR, fp);
-                break;
-            case OutputLineStyles::WriteCRLF:
-                std::fputc( CR, fp);
-                // passthru
-            case OutputLineStyles::WriteLF:
-                std::fputc( LF, fp);
-        }
+        if((int)OutputLineStyle & (int)OutputLineStyles::WriteCR) Put( CR );
+        if((int)OutputLineStyle & (int)OutputLineStyles::WriteLF) Put( LF );
     }
+    conv.EndPut();
+    while(conv.Avail())
+        std::fputc( conv.Get(), fp );
     std::fclose(fp);
 
     StatusPrintf("Saved %lu bytes to %s", EditLines.size(), fn);

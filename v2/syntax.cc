@@ -325,5 +325,8 @@ JSF::state::~state()
     option* prev = nullptr;
     for(auto o: options)
         if(o != prev)
-            { delete o; prev = o; }
+        {
+            delete o;
+            prev = o;
+        }
 }

@@ -60,7 +60,7 @@ class JSF
         // An array is precalculated for 256 characters.
         option* options[256];
 
-        state() {}
+        state() : options{{}} {}
         state(state&& b) = default;
         state& operator=(const state&) = delete;
         state(const state&) = delete;

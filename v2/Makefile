@@ -7,9 +7,14 @@ CXX=g++ -std=c++11
 #CXX=i686-w64-mingw32-g++ -std=c++0x
 
 CPPFLAGS = -Wall -W -pedantic
-CXXFLAGS += -O1
+CXXFLAGS += -O1 -g
 
 e: attr.o char32.o printf.o syntax.o editor.o cpuinfo.o
+	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LDLIBS)
+
+
+
+test: test.o syntax.o attr.o
 	$(CXX) -o $@ $^ $(CXXFLAGS) $(LDFLAGS) $(LDLIBS)
 
 

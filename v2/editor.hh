@@ -50,8 +50,8 @@ class Editor
     unsigned    IndentTabSize = 4;
     unsigned    FileTabSize   = 8;
 
-    enum class InputLineStyles { ReadCR, ReadLF, ReadCRLF, ReadBoth } InputLineStyle = InputLineStyles::ReadBoth;
-    enum class OutputLineStyles { WriteCR, WriteLF, WriteCRLF }      OutputLineStyle = OutputLineStyles::WriteCRLF;
+    enum class InputLineStyles  { ReadCR, ReadLF, ReadCRLF, ReadBoth } InputLineStyle = InputLineStyles::ReadBoth;
+    enum class OutputLineStyles { WriteCR=1, WriteLF=2, WriteCRLF=3 }      OutputLineStyle = OutputLineStyles::WriteCRLF;
     bool InputPreserveTabs = false;
     bool OutputCreateTabs  = false;
     char32_t InternalNewline = U'\n';
