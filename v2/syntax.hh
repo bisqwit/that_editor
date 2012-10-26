@@ -3,11 +3,12 @@
 
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include <vector>
-#include <list>
 #include <string>
+#include <array>
 
 #include "attr.hh"
 #include "char32.hh"
+#include "ptr_array.hh"
 
 /* JSF file parser and applier
  * JSF = Joe Syntax Format.
@@ -25,11 +26,7 @@ class JSF
         struct option
         {
             // Target state when option is matched
-            union
-            {
-                state*       stateptr;
-                std::string* nameptr;
-            };
+            unsigned short tgt_state;
 
             unsigned char recolor = 0;
             unsigned char strings = 0;     // 0=no strings, 1=strings, 2=istrings
@@ -39,35 +36,28 @@ class JSF
             // If the strings option is taken, the stringtable is searched
             // for the contents of buffer (that started when "buffer" option
             // was hit last time), and target is chosen based on that.
-            union stringopt // Target state when a string item is matched
-            {
-                state*       stateptr;
-                std::string* nameptr;
-            };
 
             // std::map is not used for this stringtable, because
             // it does not work with case-insensitive matching.
-            std::vector< std::pair<std::string, stringopt> > stringtable;
+            std::vector< std::pair<std::string, unsigned short> > stringtable;
 
             // The string table is sorted ddifferently epending on whether
             // strings are matched in case-sensitive or insensitive manner.
             void SortStringTable();
 
-            std::vector< std::pair<std::string, stringopt> >::const_iterator
+            std::vector< std::pair<std::string, unsigned short> >::const_iterator
                 SearchStringTable(const std::string& s) const;
         };
 
         // An array is precalculated for 256 characters.
-        option* options[256];
+        pointer_array<option, 256> options;
 
-        state() : options{{}} {}
-        state(state&& b) = default;
-        state& operator=(const state&) = delete;
-        state(const state&) = delete;
-        ~state();
+        state() = default;
+        state(state&&) = default;
+        state& operator=(state&&) = default;
     };
 
-    std::list<state> states;
+    std::vector<state> states;
 
 public:
     // Load the given .jsf file
@@ -80,21 +70,21 @@ public:
 
     struct ApplyState
     {
-        std::string   buffer;
-        state*        s;
-        unsigned char recolor;
-        char          c;
-        bool          noeat;
+        std::string    buffer;
+        unsigned short state_no;
+        unsigned char  recolor;
+        char           c;
+        bool           noeat;
 
-        ApplyState() : buffer(), s(nullptr), recolor(0), c('?'), noeat(false) { }
+        ApplyState() : buffer(), state_no(0), recolor(0), c('?'), noeat(false) { }
 
         bool operator== (const ApplyState& b) const
         {
-            return s       == b.s
-                && noeat   == b.noeat
-                && recolor == b.recolor
-                && c       == b.c
-                && buffer  == b.buffer;
+            return state_no == b.state_no
+                && noeat    == b.noeat
+                && recolor  == b.recolor
+                && c        == b.c
+                && buffer   == b.buffer;
         }
         bool operator!= (const ApplyState& b) const { return !operator==(b); }
     };
@@ -103,16 +93,8 @@ public:
              typename RecolorFunc>  /* void(unsigned n,AttrType attr) */
     void Apply(ApplyState& state, GetFunc&& Get, RecolorFunc&& Recolor)
     {
-        if(states.empty())
-        {
-            state.s = 0;
-            return;
-        }
-
-        if(!state.s)
-        {
-            state.s = &states.front();
-        }
+        if(states.empty()) return;
+        if(state.state_no >= states.size()) state.state_no = 0;
 
         for(;;)
         {
@@ -130,20 +112,22 @@ public:
                 state.recolor += 1;
             }
 
-            Recolor(state.recolor, state.s->attr);
+            const auto& s = states[state.state_no];
+
+            Recolor(state.recolor, s.attr);
             state.recolor = 0;
 
-            const auto* o = state.s->options[ (unsigned char) state.c ];
-            state.recolor = o->recolor;
-            state.noeat   = o->noeat;
-            state.s = o->stateptr; // Choose the default target state
+            const auto* o = s.options.Get( (unsigned char) state.c );
+            state.recolor  = o->recolor;
+            state.noeat    = o->noeat;
+            state.state_no = o->tgt_state; // Choose the default target state
             if(o->strings)
             {
                 auto i = o->SearchStringTable(state.buffer);
                 if(i != o->stringtable.end())
                 {
-                    state.s       = i->second.stateptr;
-                    state.recolor = state.buffer.size() + 1;
+                    state.state_no = i->second;
+                    state.recolor  = state.buffer.size() + 1;
                 }
                 state.buffer.clear();
             }

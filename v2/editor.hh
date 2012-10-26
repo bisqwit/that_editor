@@ -1,5 +1,6 @@
 #include <vector>
 #include <string>
+#include <list>
 
 #include "syntax.hh"
 #include "printf.hh"

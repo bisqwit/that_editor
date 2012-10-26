@@ -2,6 +2,7 @@
 #include <map>
 #include <algorithm>
 #include <vector>
+#include <list>
 
 #include "syntax.hh"
 
@@ -71,11 +72,30 @@ void JSF::Parse(std::FILE* fp, bool quiet)
         std::fprintf(stdout, "Parsing syntax file... "); std::fflush(stdout);
     }
 
-    std::map<std::string, AttrType> colors;
-    std::map<std::string, state*> state_cache;
+    std::map<std::string, AttrType> colors_by_name;
+    std::map<std::string, unsigned short> statenumbers_by_name;
 
     states.clear();
     std::list<state::option*> options;
+    unsigned short current_state = 0;
+
+    auto GetStateByName = [&](const std::string& s) -> unsigned short
+    {
+        auto i = statenumbers_by_name.lower_bound(s);
+        if(i != statenumbers_by_name.end() && i->first == s)
+            return i->second;
+        unsigned short r = states.size();
+        statenumbers_by_name.insert(i, {s,r});
+        states.emplace_back( );
+        return r;
+    };
+
+    // Scan for states
+    while(std::fgets(Buf, sizeof(Buf), fp))
+        if(Buf[0] == ':')
+            ++current_state;
+    std::rewind(fp);
+    states.reserve(current_state);
 
     while(std::fgets(Buf, sizeof(Buf), fp))
     {
@@ -95,7 +115,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 while(*line==' '||*line=='\t') ++line;
                 *nameend = '\0';
 
-                colors[namebegin] = AttrType::ParseJSFattribute(line);
+                colors_by_name[namebegin] = AttrType::ParseJSFattribute(line);
                 break;
             }
             case ':': // Parse beginning of state
@@ -110,9 +130,9 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 *nameend = '\0';
                 // Now namebegin=name, line=colorname
 
-                auto i = colors.find(line);
+                auto i = colors_by_name.find(line);
                 AttrType attr = AttrParseError;
-                if(i == colors.end())
+                if(i == colors_by_name.end())
                 {
                     if(!quiet)
                         std::fprintf(stdout, "Unknown color: '%s'\n", line);
@@ -120,8 +140,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 else
                     attr = i->second;
 
-                states.push_back( std::move(state()) );
-                state_cache[namebegin] = &states.back();
+                current_state = GetStateByName(namebegin);
                 break;
             }
             case ' ':
@@ -131,14 +150,14 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 while(*line == ' ' || *line == '\t') ++line;
 
                 options.push_front( new state::option );
-                auto& s = states.back(); // Current state
                 auto& o = *options.front();
 
+                {auto& s = states[current_state];
                 switch(*line)
                 {
                     case '*': // Match every character
                         for(unsigned a=0; a<256; ++a)
-                            s.options[a] = &o;
+                            s.options.Set(a, &o);
                         ++line;
                         break;
                     case '"': // Match characters in this string
@@ -164,15 +183,15 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                                         case 'v': *line = '\v'; break;
                                         case 'b': *line = '\b'; break;
                                     }
-                                do s.options[first] = &o;
+                                do s.options.Set(first, &o);
                                 while(first++ != (unsigned char)*line);
                             }
                             else
-                                s.options[first] = &o;
+                                s.options.Set(first, &o);
                         }
                         if(*line == '"') ++line;
                         break;
-                }
+                }}//end scope for states[current_state]
                 while(*line == ' ' || *line == '\t') ++line;
                 char* namebegin = line;
                 while(*line && *line != ' ' && *line!='\t') ++line;
@@ -180,7 +199,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 while(*line == ' ' || *line == '\t') ++line;
                 *nameend = '\0';
 
-                o.nameptr = new std::string(namebegin);
+                o.tgt_state = GetStateByName(namebegin);
 
                 /*fprintf(stdout, "'%s' for these: ", o->state_name);
                 for(unsigned c=0; c<256; ++c)
@@ -240,33 +259,11 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                         /*unsigned char* value_end   = (unsigned char*) line;
                         *value_end++ = '\0';*/
 
-                        state::option::stringopt opt;
-                        opt.nameptr = new std::string( value_begin );
-                        o.stringtable.push_back( {key_begin, opt} );
+                        o.stringtable.push_back( {key_begin, GetStateByName(value_begin)} );
                     }
                     o.SortStringTable();
                 }
             }
-        }
-    }
-
-    if(!quiet)
-    {
-        std::fprintf(stdout, "Binding... "); std::fflush(stdout);
-    }
-
-    // Translate state names to state pointers.
-    for(auto o: options)
-    {
-        auto p = state_cache[*o->nameptr];
-        delete o->nameptr;
-        o->stateptr = p;
-
-        for(auto& t: o->stringtable)
-        {
-            p = state_cache[*t.second.nameptr];
-            delete t.second.nameptr;
-            t.second.stateptr = p;
         }
     }
 
@@ -281,35 +278,35 @@ void JSF::state::option::SortStringTable()
 {
     if(strings==1)
         std::sort(stringtable.begin(), stringtable.end(),
-            [](const std::pair<std::string, stringopt>& a,
-               const std::pair<std::string, stringopt>& b)
+            [](const std::pair<std::string, unsigned short>& a,
+               const std::pair<std::string, unsigned short>& b)
             {
                 return a.first < b.first;
             } );
     else
         std::sort(stringtable.begin(), stringtable.end(),
-            [](const std::pair<std::string, stringopt>& a,
-               const std::pair<std::string, stringopt>& b)
+            [](const std::pair<std::string, unsigned short>& a,
+               const std::pair<std::string, unsigned short>& b)
             {
                 return strcasecmp(a.first.c_str(), b.first.c_str()) < 0;
             } );
 }
 
 
-std::vector< std::pair<std::string, JSF::state::option::stringopt> >::const_iterator
+std::vector< std::pair<std::string, unsigned short> >::const_iterator
     JSF::state::option::SearchStringTable(const std::string& s) const
 {
     auto i = (strings == 1)
         ? // Case-sensitive matching
           std::lower_bound(stringtable.begin(), stringtable.end(), s,
-            [](const std::pair<std::string, stringopt>& a,
+            [](const std::pair<std::string, unsigned short>& a,
                const std::string& s)
             {
                 return a.first < s;
             } )
         :  // Case-insensitive
           std::lower_bound(stringtable.begin(), stringtable.end(), s,
-            [](const std::pair<std::string, stringopt>& a,
+            [](const std::pair<std::string, unsigned short>& a,
                const std::string& s)
             {
                 return strcasecmp(a.first.c_str(), s.c_str()) < 0;
@@ -317,16 +314,4 @@ std::vector< std::pair<std::string, JSF::state::option::stringopt> >::const_iter
     if(i == stringtable.end() || i->first != s)
         return stringtable.end();
     return i;
-}
-
-JSF::state::~state()
-{
-    std::sort(std::begin(options), std::end(options));
-    option* prev = nullptr;
-    for(auto o: options)
-        if(o != prev)
-        {
-            delete o;
-            prev = o;
-        }
 }
