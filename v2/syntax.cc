@@ -73,6 +73,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
 
     std::vector< std::pair<std::string, AttrType> > colornames;
     std::vector< std::string > statenames;
+    options.clear();
 
     auto GetStateByName = [&](const std::string& s) -> unsigned short
     {
@@ -107,14 +108,26 @@ void JSF::Parse(std::FILE* fp, bool quiet)
     {
         std::size_t n_states = 0;
         std::size_t n_colors = 0;
+        std::size_t n_options = 0;
+        bool in_strings = false;
         while(std::fgets(Buf, sizeof(Buf), fp))
         {
             if(Buf[0] == ':') ++n_states;
             if(Buf[0] == '=') ++n_colors;
+            if(Buf[0] == ' ' || Buf[0] == '\t')
+            {
+                if(!in_strings)
+                {
+                    ++n_options;
+                    if(std::strstr(Buf, "strings")) in_strings = true;
+                }
+                else if(std::strstr(Buf, "done")) in_strings = false;
+            }
         }
         std::rewind(fp);
         statenames.reserve(n_states);
         colornames.reserve(n_colors);
+        options.reserve(n_options);
         // Save colors and state-name
         while(std::fgets(Buf, sizeof(Buf), fp))
         {
@@ -189,17 +202,15 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 char* line = Buf;
                 while(*line == ' ' || *line == '\t') ++line;
 
-                state::option* o = new state::option;
-                o->strings = 0;
-                o->noeat   = false;
-                o->buffer  = false;
+                unsigned opt_no = options.size();
+                options.emplace_back( );
 
                 {auto& s = states[current_state];
                 switch(*line)
                 {
                     case '*': // Match every character
                         for(unsigned a=0; a<256; ++a)
-                            s.options.Set(a, o);
+                            s.options.Set(a, opt_no);
                         ++line;
                         break;
                     case '"': // Match characters in this string
@@ -225,11 +236,11 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                                         case 'v': *line = '\v'; break;
                                         case 'b': *line = '\b'; break;
                                     }
-                                do s.options.Set(first, o);
+                                do s.options.Set(first, opt_no);
                                 while(first++ != (unsigned char)*line);
                             }
                             else
-                                s.options.Set(first, o);
+                                s.options.Set(first, opt_no);
                         }
                         if(*line == '"') ++line;
                         break;
@@ -241,13 +252,11 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 while(*line == ' ' || *line == '\t') ++line;
                 *nameend = '\0';
 
-                o->tgt_state = GetStateByName(namebegin);
-
-                /*fprintf(stdout, "'%s' for these: ", o->state_name);
-                for(unsigned c=0; c<256; ++c)
-                    if(s.options[c] == o)
-                        fprintf(stdout, "%c", c);
-                fprintf(stdout, "\n");*/
+                auto& o = options[opt_no];
+                o.tgt_state = GetStateByName(namebegin);
+                o.noeat = 0;
+                o.buffer = 0;
+                o.strings = 0;
 
                 while(*line != '\0')
                 {
@@ -259,26 +268,26 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                     switch(*opt_begin)
                     {
                         case 'n':
-                            if(strcmp(opt_begin+1, /*"n"*/"oeat") == 0) { o->noeat = 1; break; }
+                            if(strcmp(opt_begin+1, /*"n"*/"oeat") == 0) { o.noeat = 1; break; }
                         case 'b':
-                            if(strcmp(opt_begin, "buffer") == 0) { o->buffer = 1; break; }
+                            if(strcmp(opt_begin, "buffer") == 0) { o.buffer = 1; break; }
                         case 's':
-                            if(strcmp(opt_begin, "strings") == 0) { o->strings = 1; break; }
+                            if(strcmp(opt_begin, "strings") == 0) { o.strings = 1; break; }
                         case 'i':
-                            if(strcmp(opt_begin, "istrings") == 0) { o->strings = 2; break; }
+                            if(strcmp(opt_begin, "istrings") == 0) { o.strings = 2; break; }
                         case 'r':
                             if(strncmp(opt_begin, "recolor=", 8) == 0)
                             {
                                 int r = atoi(opt_begin+8);
                                 if(r < 0) r = -r;
-                                o->recolor = r;
+                                o.recolor = r;
                                 break;
                             }
                         default:
                             fprintf(stdout,"Unknown keyword '%s' in '%s'\n", opt_begin, namebegin);
                     }
                 }
-                if(o->strings)
+                if(o.strings)
                 {
                     // First, count the number of strings
                     std::size_t n_strings = 0;
@@ -292,7 +301,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                         ++n_strings;
                     }
                     std::fseek(fp, p, SEEK_SET);
-                    o->stringtable.reserve(n_strings);
+                    o.stringtable.reserve(n_strings);
                     // Then read the strings
                     while(std::fgets(Buf, sizeof(Buf), fp))
                     {
@@ -315,9 +324,9 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                         /*unsigned char* value_end   = (unsigned char*) line;
                         *value_end++ = '\0';*/
 
-                        o->stringtable.push_back( {key_begin, GetStateByName(value_begin)} );
+                        o.stringtable.push_back( {key_begin, GetStateByName(value_begin)} );
                     }
-                    o->SortStringTable();
+                    o.SortStringTable();
                 }
             }
         }

@@ -10,8 +10,8 @@ class pointer_array
 {
     static_assert(Dimension != 1, "pointer_array size must be greater than 1.");
 
-    static constexpr unsigned num_distinct = 3;//NUM_DISTINCT;
-    static constexpr unsigned max_distinct = 12;//MAX_DISTINCT;
+    static constexpr unsigned num_distinct = NUM_DISTINCT;
+    static constexpr unsigned max_distinct = MAX_DISTINCT;
     std::vector< T >                     distinct_options;
     std::vector< std::bitset<Dimension> > bitsets;
 public:

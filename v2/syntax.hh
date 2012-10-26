@@ -55,7 +55,7 @@ class JSF
          * To that end, we use this size-optimized "pointer_array" structure
          * rather than a simple option* options[256];.
          */
-        pointer_array<option*, 256> options;
+        pointer_array<unsigned short, 256> options;
 
         state() = default;
         state(state&&) = default;
@@ -123,7 +123,7 @@ public:
             Recolor(state.recolor, s.attr);
             state.recolor = 0;
 
-            const auto& o = *s.options.Get( (unsigned char) state.c );
+            const auto& o = options[s.options.Get( (unsigned char) state.c )];
             state.recolor  = o.recolor;
             state.noeat    = o.noeat;
             state.state_no = o.tgt_state; // Choose the default target state
