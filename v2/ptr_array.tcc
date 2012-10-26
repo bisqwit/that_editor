@@ -1,110 +1,96 @@
 #include "ptr_array.hh"
 #include <algorithm>
+#include <type_traits>
 
 template<typename T, unsigned Dimension>
-T* pointer_array<T,Dimension>::Get(std::size_t index) const
+T pointer_array<T,Dimension>::Get(std::size_t index) const
 {
-    if(bitset)
-    {
-        for(unsigned n=1; n<num_distinct; ++n)
-            if(bitset->test(index + (n-1)*Dimension))
-                return distinct_options[n];
-        return distinct_options[0];
-    }
-    return distinct_options[index];
+    if(bitsets.empty() && distinct_options.size() > 1)
+        return distinct_options[index];
+
+    for(std::size_t b=bitsets.size(), a=0; a<b; ++a)
+        if(bitsets[a].test(index))
+            return distinct_options[a+1];
+    return distinct_options[0];
 }
 
 template<typename T, unsigned Dimension>
-void pointer_array<T,Dimension>::Set(std::size_t index, T* ptr)
+void pointer_array<T,Dimension>::Set(std::size_t index, T ptr)
 {
-    if(bitset)
+    if(bitsets.empty() && distinct_options.size() > 1)
     {
-        unsigned first_null = ~0u;
-        for(unsigned n=0; n<num_distinct; ++n)
+        distinct_options[index] = (ptr);
+        return;
+    }
+
+    std::size_t found_pos = ~size_t(0);
+    for(std::size_t b=distinct_options.size(), a=0; a<b; ++a)
+        if(distinct_options[a] == ptr)
         {
-            if(ptr == distinct_options[n])
-            {
-                for(unsigned m=1; m<num_distinct; ++m)
-                    if(m == n)
-                        bitset->set(   index + (m-1)*Dimension );
-                    else
-                        bitset->reset( index + (m-1)*Dimension );
-                return;
-            }
-            if(first_null == ~0u && !distinct_options[n])
-                first_null = n;
+            found_pos = a;
+            break;
         }
-        if(first_null != ~0u)
+    if(found_pos == ~size_t(0))
+    {
+        found_pos = distinct_options.size();
+        if(found_pos >= max_distinct)
         {
-            distinct_options[first_null] = ptr;
-            if(first_null > 0)
-                bitset->set(   index + (first_null-1)*Dimension );
+            // Convert into a flat array
+            std::vector<T> o(Dimension, distinct_options[0]);
+            for(std::size_t b=bitsets.size(), a=0; a<b; ++a)
+                for(unsigned c=0; c<Dimension; ++c)
+                    if(bitsets[a].test(c))
+                        o[c] = distinct_options[a+1];
+            distinct_options.swap(o);
+            bitsets.clear();
+            distinct_options[index] = ptr;
             return;
         }
-        // We already have a full set of distinct options.
-        // Convert the distinct_options array into an array of Dimension.
-        T** p = distinct_options;
-        distinct_options = new T* [Dimension];
-        for(unsigned n=0; n<Dimension; ++n)
-            distinct_options[n] = p[0];
-        for(unsigned n=0; n<Dimension * (num_distinct-1); ++n)
-            if(bitset->test(n))
-                distinct_options[n%Dimension] = p[ (n/Dimension) + 1];
-        delete[] p;
-        delete bitset;
-        bitset = nullptr;
+        distinct_options.push_back( (ptr) );
+        bitsets.emplace_back(  );
     }
-    distinct_options[index] = ptr;
+
+    for(std::size_t b=bitsets.size(), a=0; a<b; ++a)
+        if(found_pos+1 == a)
+            bitsets[a].set(index);
+        else
+            bitsets[a].reset(index);
 }
 
 template<typename T, unsigned Dimension>
 pointer_array<T,Dimension>::pointer_array()
-    : distinct_options{ new T* [num_distinct] },
-      bitset{ new std::bitset<Dimension * (num_distinct-1)> }
 {
-    for(unsigned n=0; n<num_distinct; ++n)
-        distinct_options[n] = 0;
+    distinct_options.reserve(num_distinct);
+    bitsets.reserve(num_distinct-1);
 }
+
+template<typename T, bool is_ptr=std::is_pointer<T>::value>
+struct DeletePointerArray
+{
+    template<typename T2>
+    static void DealWith(T2& )
+    {
+    }
+};
+template<typename T>
+struct DeletePointerArray<T,true>
+{
+    template<typename T2>
+    static void DealWith(T2& array)
+    {
+        std::sort( std::begin(array), std::end(array) );
+        T prev = nullptr;
+        for(auto p: array)
+            if(p != prev)
+            {
+                delete p;
+                prev = p;
+            }
+    }
+};
 
 template<typename T, unsigned Dimension>
 pointer_array<T,Dimension>::~pointer_array()
 {
-    Clean();
-}
-
-
-template<typename T, unsigned Dimension>
-pointer_array<T,Dimension>::pointer_array(pointer_array&& b)
-    : distinct_options(b.distinct_options),
-      bitset(b.bitset)
-{
-    b.distinct_options = nullptr;
-    b.bitset           = nullptr;
-}
-
-template<typename T, unsigned Dimension>
-auto pointer_array<T,Dimension>::operator=(pointer_array&& b) -> pointer_array&
-{
-    Clean();
-
-    distinct_options = b.distinct_options;
-    bitset           = b.bitset;
-    b.distinct_options = nullptr;
-    b.bitset           = nullptr;
-    return *this;
-}
-
-template<typename T, unsigned Dimension>
-void pointer_array<T,Dimension>::Clean()
-{
-    T** end = distinct_options + (bitset ? num_distinct : Dimension);
-    std::sort(distinct_options, end);
-    for(T *prev = nullptr, **p = distinct_options; p != end; ++p)
-        if(*p != prev)
-        {
-            delete *p;
-            prev = *p;
-        }
-    delete bitset;
-    delete[] distinct_options;
+    DeletePointerArray<T>::DealWith(distinct_options);
 }

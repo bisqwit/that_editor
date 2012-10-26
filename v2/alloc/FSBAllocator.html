@@ -1,0 +1,550 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<html>
+<head>
+ <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
+ <link href="style.css" rel="stylesheet" type="text/css" title="normal" media=screen>
+ <title>Fixed-Size Block Allocator suite for C++</title>
+</head>
+
+<body>
+<h1>Fixed-Size Block Allocator suite for C++</h1>
+
+<p>(Last updated 9 Apr 2011.)
+
+<!-- <p><a href="FSBAllocator.zip">Download the library.</a> -->
+
+<p>Table of contents:
+<ol>
+ <li><a href="#introduction">Introduction</a></li>
+ <li><a href="#allocators">Allocators provided by this library</a></li>
+     <ul>
+      <li><a href="#FSBAllocator">FSBAllocator</a></li>
+      <li><a href="#FSBAllocator2">FSBAllocator2</a></li>
+     </ul>
+ <li><a href="#benchmark">Speed benchmark of FSBAllocator</a></li>
+ <li><a href="#usage">Usage of FSBAllocator</a></li>
+ <li><a href="#threadsafety">Thread safety</a></li>
+ <li><a href="#refcounter">FSBAllocator2 as a reference counter pool</a></li>
+ <li><a href="#license">License</a></li>
+</ol>
+
+<a name="introduction"></a>
+<h2>Introduction</h2>
+
+<p>In most systems the default allocator used by C++ (and C) compilers is
+a very general memory allocator which supports allocating and freeing blocks
+of memory of any size. The advantage of this is that it's memory-efficient
+when the sizes of the allocated blocks are very varied throughout the
+execution of the program.
+
+<p>The disadvantage of this is, however, that the bookkeeping data needed
+by the default allocator is relatively complicated, so managing all
+this memory with free-sized blocks is relatively slow. Another problem
+is that the default allocator tends to be rather cache-unfriendly with
+repeated allocations and deallocations, as the list of freed blocks gets
+quite randomized (a very random list of free memory blocks will cause
+allocations to cause large amounts of cache misses, which can heavily
+penalize the speed of the allocator).
+
+<p>There are many situations, especially when programming in C++ using
+the STL data containers, where it would be enough to have an allocator
+for fixed-sized memory blocks. The advantage of this is that the allocator
+can be made considerably faster because the bookkeeping is much simpler
+and it's much easier to make it cache-friendly.
+
+<p>This library provides two allocators which are more optimized for
+speed and memory usage. The first one is especially suitable for the
+C++ STL data containers, specifically <code>std::list</code>,
+<code>std::set</code> and <code>std::map</code>.
+
+<a name="allocators"></a>
+<h2>Allocators provided by this library</h2>
+
+<p>This library presents two fixed-size block allocators:
+
+<a name="FSBAllocator"></a>
+<h3>FSBAllocator</h3>
+
+<p>This is a more generic fixed-size block allocator, which is very
+suitable for use with the C++ STL data containers which allocate one
+element at a time, ie. <code>std::list</code>, <code>std::set</code> and
+<code>std::map</code>. It cannot be used with <code>std::vector</code>,
+<code>std::deque</code> nor <code>std::string</code> (but on the other
+hand the memory usage of those containers is already very good, so they
+don't really need a specialized allocator).
+
+<p>The allocator works by allocating contiguous blocks of memory where
+the allocated elements are stored. The size of the element is determined
+automatically from the objects to be allocated. Basically an allocator is
+created for every element size that is used. (On the other hand, if two
+different data containers use elements of the same size, they will share
+the same allocator.)
+
+<p>If an entire block of elements is deallocated, then the block will be
+freed from the main memory as well. Besides the obvious advantage of
+memory being freed for other uses, this has also speed advantages
+(because if the block is allocated again, it will be cache-friendly
+and consecuently very fast).
+
+<p>Each allocated element has an overhead of 4 bytes in 32-bit systems
+(8 bytes in 64-bit systems), which is the same as with most default
+memory allocators. Thus this allocator does not consume any more memory
+than the default one. In fact, it can sometimes allocate even less memory
+than the default allocator because many such allocators align allocated
+elements to 8-byte boundaries, while <code>FSBAllocator</code> allocates
+to 4-byte boundaries (in 32-bit systems).
+
+<p>The disadvantages of using this allocator are the following:
+
+<ul>
+ <li>The memory used by this allocator cannot be shared with anything else
+     in the program which uses dynamically allocated memory.</li>
+ <li>This allocator supports allocating only individual elements. It cannot
+     be used to allocate arrays (which is why it cannot be used with
+     <code>std::vector</code> nor <code>std::deque</code>). On the other
+     hand, this is usually not a problem.</li>
+ <li>If the memory allocated using this allocator becomes fragmented,
+     it may in some cases cause the allocator to waste considerable
+     amounts of memory. (This happens mainly if a lot of elements are
+     allocated and then the majority of them are deallocated, but random
+     individual elements here and there aren't.)</li>
+ <li>This allocator is <em>not</em> thread-safe by default. However, the
+     library offers several possibilities for making it thread-safe with
+     a precompiler constant. See the thread-safety section below.</li>
+</ul>
+
+<a name="FSBAllocator2"></a>
+<h3>FSBAllocator2</h3>
+
+<p>This is very similar to the <code>FSBAllocator</code>, with the difference
+that it never frees memory. The advantage of this is that no bookkeeping data
+is needed, and thus there's no overhead and allocated elements take only
+as much memory as the size of the element.
+
+<p>This can be especially efficient if lots of very small elements
+(such as individual integers) are allocated. For example the default
+memory allocator in Linux allocates a minimum of 16 bytes per element,
+so if you allocate an individual (4-byte) integer, 16 bytes will be
+allocated nevertheless. Using <code>FSBAllocator2</code> only 4 bytes will be
+allocated (in 32-bit systems).
+
+<p>The disadvantage over <code>FSBAllocator</code> is that since memory is
+never freed, this memory cannot be used by anything else and, more
+importantly, <code>FSBAllocator2</code> can be considerably slower than
+<code>FSBAllocator</code> when lots of elements are constantly being
+allocated and freed. (As mentioned earlier, if the list of freed elements
+gets very randomized, this will cause the allocator to become
+cache-unfriendly, causing lots of cache misses, which can penalize it
+in speed quite a lot.)
+
+<p>Note, however, that according to my tests <code>FSBAllocator2</code>
+is basically never slower than the default allocator, and thus safe to use
+speedwise.
+
+<p>Only if all the allocated elements are freed, then
+<code>FSBAllocator2</code> will release all of its memory, becoming
+(for the time being) cache-friendly and fast again.
+
+<p><code>FSBAllocator2</code> also has a special function for freeing
+blocks of memory which only contain deallocated elements. This function
+performs a linear sweep through all the blocks and deallocates the ones
+which do not contain allocated elements, as well as making the list of
+free elements linear. While this sweep can be slow, it will make
+subsequent allocations faster.
+
+<p>This allocator is especially efficient for allocating very small elements,
+such as for example smart pointer reference counters. Details about this
+are given later in this document.
+
+<p>Note that in simple circumstances <code>FSBAllocator2</code> can be
+even faster than <code>FSBAllocator</code>. (For example if memory is
+only allocated during the execution of the program, and only freed all
+at the same time at the end.)
+
+<p><code>FSBAllocator2</code> can be used with the STL containers in the
+same way as <code>FSBAllocator</code>, but due to its speed issues this
+should only be done if the memory savings are important or in simple
+cases, like the above.
+
+<p>The same disadvantages apply as with <code>FSBAllocator</code>.
+
+<a name="benchmark"></a>
+<h2>Speed benchmark of FSBAllocator</h2>
+
+<p>To test the speed of <code>FSBAllocator</code> compared to the default
+allocator used by the compiler, the following test was performed on a Linux
+system using gcc&nbsp;4.1.2 on a Pentium4 3.4GHz:
+
+<p>A <code>std::list&lt;int&gt;</code> was used, and the following operations
+where done to it:
+
+<ol>
+ <li>Add 10 million integers (all consecutive integers between 1 and 10
+     millions) with <code>push_back()</code>.</li>
+ <li>Remove each 3rd element with <code>erase()</code>.</li>
+ <li>Add again the 10 million integers with <code>push_back()</code>.</li>
+ <li>Remove each 7th element with <code>erase()</code>.</li>
+ <li>Add again the 10 million integers with <code>push_back()</code>.</li>
+ <li>Destroy the list.</li>
+</ol>
+
+<p>This process was repeated in a loop 10 times.
+
+<p>The benchmark was run for both the default allocator and the FSBallocator.
+For comparison, this test was also run using
+<code>boost::fast_pool_allocator</code>. All conditions were otherwise
+exactly identical. The results were:
+
+<ul>
+ <li>Default allocator: 1 minute 12 seconds.</li>
+ <li>Boost pool allocator: 57 seconds.</li>
+ <li><code>FSBAllocator</code>: 16 seconds.</li>
+</ul>
+
+<p>The same test was repeated using <code>std::set&lt;int&gt;</code>
+(obviously using <code>insert()</code> instead of <code>push_back()</code>),
+and the results were:
+
+<ul>
+ <li>Default allocator: 2 minutes 12 seconds.</li>
+ <li>Boost pool allocator: 1 minute 40 seconds.</li>
+ <li><code>FSBAllocator</code>: 1 minute 10 seconds.</li>
+</ul>
+
+<p>(Note that in this case there are far fewer element creations and
+deletions because of all the repeated values, which is the reason why the
+times are closer to each other.)
+
+<a name="usage"></a>
+<h2>Usage of FSBAllocator</h2>
+
+<p>Using the allocator is rather simple. Simply
+<code>#include&nbsp;"FSBAllocator.hh"</code> in the source files where
+the allocator is used, and then simply give the allocator to the desired
+STL container as template parameter. For example, instead of writing this:
+
+<pre>
+    std::list&lt;int&gt; aList;
+</pre>
+
+<p>write this:
+
+<pre>
+    std::list&lt;int, FSBAllocator&lt;int&gt; &gt; aList;
+</pre>
+
+<p>That's it. No other modifications are needed.
+
+<p>The same for <code>std::set</code> would be:
+
+<pre>
+    std::set&lt;int, std::less&lt;int&gt;, FSBAllocator&lt;int&gt; &gt; aSet;
+</pre>
+
+<p>If you want to use the allocator directly, as a replacement of
+<code>new</code> and <code>delete</code>, it can be done like this:
+
+<pre>
+    FSBAllocator&lt;YourType&gt; alloc;
+    YourType* anInstance = alloc.allocate(1);
+    // alloc.construct(anInstance, YourType()); // if YourType is a class
+    ...
+    // alloc.destroy(anInstance); // if YourType is a class
+    alloc.deallocate(anInstance, 1);
+</pre>
+
+<p>Note that <code>allocate()</code> only allocates memory for the object
+but doesn't initialize it in any way (similarly to how, for example,
+<code>std::malloc()</code> would do). If your type is a class, you'll have
+to initialize and destroy it yourself as demonstrated in the commented
+lines or by using <em>placement new</em> directly after allocating and by
+calling its destructor explicitly before deallocating.
+
+<p>(Also note that, as stated earlier, arrays cannot be allocated with this
+allocator, and thus the only valid parameter value is 1.)
+
+<h3>FSBAllocator2</h3>
+
+<p><code>FSBAllocator2</code> can be used in the same way as
+<code>FSBAllocator</code>, although usually it's only recommended for
+special cases, like for example as a reference counter pool, described below.
+
+<p>Additionally, <code>FSBAllocator2</code> offers a special function for
+freeing unused memory, which can be used like this:
+
+<pre>
+    FSBAllocator2&lt;YourType&gt;().cleanSweep();
+</pre>
+
+<p>This will make the allocator to traverse all the allocated blocks
+and free the ones which do not contain any allocated elements. It will
+also make the list of freed elements linear.
+
+<p>Note, however, that there's a catch, which can make this function to
+malfunction, and thus it must be used with care: In order to distinguish
+which allocated elements are free and which aren't, it fills these freed
+elements with an "unused value", which it takes as parameter, and which
+by default is a <code>size_t(-1)</code>. This value must indeed by
+unused by the application. If the application has written this value
+in some of the allocated elements, this function will malfunction (and
+free elements it shouldn't).
+
+<p>For example if this allocator is used as a reference counter pool,
+and all reference counts get values greater or equal to 0, then it's
+safe to call this function as it is. If the value <code>size_t(-1)</code>
+is used by the application for something, then it must provide some other
+unused value for this function to use, for example:
+
+<pre>
+    FSBAllocator2&lt;size_t&gt;().cleanSweep(size_t(-2));
+</pre>
+
+<p>If unsure, it's better to not to call this function at all.
+
+<p>Note, however, that even though this function can be slow (depending
+on how much memory has been allocated), it can make subsequent allocations
+much faster, especially if the list of freed elements has become very
+randomized.
+
+<a name="threadsafety"></a>
+<h2>Thread safety</h2>
+
+<p>By default this library is <em>not</em> thread-safe, and thus cannot be
+used as an allocator for multiple threads. (As long as only one thread uses
+this allocator and the memory allocated by it, it should be ok.)
+
+<p>The library offers several possibilities for making itself thread-safe.
+This is done by defining one (and only one) of the following precompiler
+constants, either in your compiler settings, or before including this
+library. The possible precompiler constants are:
+
+<ul>
+ <li><code>FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_BOOST</code>: Use the Boost
+Thread library. This will probably require linking the boost thread library
+into the project (eg. with <code>-lboost_thread-mt</code>).
+ <li><code>FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_OPENMP</code>: Use the
+OpenMP compiler extension. The OpenMP extension requires specific compiler
+support. (With gcc it also requires linking with <code>-fopenmp</code>)
+ <li><code>FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_PTHREAD</code>: Use the
+posix pthread library. (Probably requires the <code>-lpthread</code> linker
+option.)
+ <li><code>FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_GCC</code>: If you are using
+the gcc compiler, this uses an extension provided by it (more precisely, the
+<code>__sync_bool_compare_and_swap()</code> function).
+  <li><code>FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_GCC_WITH_SCHED</code>: Like
+the previous, but additionally uses the posix <code>&lt;sched.h&gt;</code>
+library to better interact with the system task scheduler. This results in
+an even more efficient and CPU-friendly locking.
+</ul>
+
+<p>Usage example:
+
+<pre>
+#define FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_GCC_WITH_SCHED
+#include "FSBAllocator.hh"
+</pre>
+
+<p>Note that enabling thread-safe locking will make the library slower.
+In fact, in many systems all the locking mechanisms except the last two
+(ie. the ones which use the GCC extension) may even make the library slower
+than the default allocator when using multiple threads. They are still
+offered, especially as a means to make FSBAllocator2 (which offers memory
+saving) thread-safe in most systems.
+
+<p>The following is a list of running times of the first benchmark
+mentioned before, using the different locking mechanisms (from fastest
+to slowest). Also the same benchmark was run using the default allocator.
+
+<ul>
+ <li>No locking: 16 seconds.
+ <li>GCC: 28 seconds. (The sched version makes no difference when only one
+   thread is used.)
+ <li>OpenMP: 46 seconds.
+ <li>pthread: 55 seconds.
+ <li>Boost: 70 seconds.
+ <li>Default allocator: 72 seconds.
+</ul>
+
+<p>A different (but somewhat similar) benchmark, using two threads, both of
+them using the same FSBAllocator type, resulted in the following times (from
+fastest to slowest):
+
+<ul>
+ <li>GCC with <code>&lt;sched.h&gt;</code>: 39 seconds.
+ <li>GCC: 60 seconds.
+ <li>Default allocator: 96 seconds.
+ <li>OpenMP: 107 seconds.
+ <li>pthread: 120 seconds.
+ <li>Boost: 133 seconds.
+</ul>
+
+<p>Naturally <code>FSBALLOCATOR_USE_THREAD_SAFE_LOCKING_GCC_WITH_SCHED</code>
+should be preferred, if the target system supports its requirements.
+
+<a name="refcounter"></a>
+<h2>FSBAllocator2 as a reference counter pool</h2>
+
+<h3>On smart pointers</h3>
+
+<p>There are basically three types of smart pointers:
+
+<ol>
+ <li>Non-intrusive reference-counting smart pointer.</li>
+ <li>Non-intrusive doubly-linked smart pointer.</li>
+ <li>Intrusive reference-counting smart pointer.</li>
+</ol>
+
+<p>The third type of smart pointer is usually the most efficient: The size
+of the smart pointer object is that of one single pointer, and it's very
+fast to copy and assign. Its problem is that it requires for the allocated
+object to contain a reference counter as member variable, and thus this
+smart pointer cannot be used with existing types which do not contain
+such member variable (nor with internal types, such as ints or doubles,
+obviously).
+
+<p>The first type of smart pointer has the advantage that it can be used
+with any type of allocated object. In other words, the smart pointer does
+not require anything from the object in question. However, it has two main
+problems compared to the intrusive type: Its size is that of two pointers
+(rather than one), and most importantly, it needs to dynamically allocate
+the reference counter (which is just an integer type) separately. Such an
+extra allocation not only slows down the creation and destruction of such
+smart pointers, but it also wastes memory (typically each allocation
+consumes 16 bytes of memory).
+
+<p>The second type of smart pointer is a clever variation: Rather than
+allocating a separate reference counting integer, what it does is that
+it doubly-links itself with all the other smart pointer instances which
+are pointing to the same object, effectively creating a doubly-linked list
+of smart pointers pointing to the same object. This way it has all the
+advantages of the first smart pointer type, but it doesn't need to allocate
+anything. Its disadvantage is that its size is that of three pointers.
+
+<p>The doubly-linked smart pointer is more efficient than the non-intrusive
+reference-counting smart pointer when there are lots of allocated objects
+with only one (or a few) smart pointer pointing to them, and these smart
+pointers are not copied/assigned around a lot. In this case the doubly-linked
+smart pointers consume less memory and are faster to create and destroy.
+
+<p>However, the non-intrusive reference-counting smart pointers start being
+more efficient if there are lots of smart pointers pointing to the same
+object, and these smart pointers are copied/assigned around a lot. The more
+smart pointers point to the same object, the less memory is wasted on the
+smart pointers themselves, compared to the doubly-linked smart pointers.
+Also copying and assigning is slightly faster for the reference-counting
+ones.
+
+<p>The ideal solution (when intrusive smart pointers cannot be used) is to
+use the non-intrusive reference-counting smart pointers with a reference
+counter pool.
+
+<h3>A reference counter pool solution</h3>
+
+<p><code>FSBAllocator2</code> is ideal for such a reference counter pool.
+This is because each allocated counter requires only as much memory as the size
+of the counter (4 bytes in 32-systems) and nothing more. Allocating and
+deallocating these counters is also faster (sans the problems with
+cache-friendliness discussed earlier).
+
+<p>When such a reference counter pool is used, the reference-counting
+smart pointer loses all of its disadvantages over the doubly-linked
+smart pointers: Each smart pointer instance allocates at most two
+pointers and one reference counter (which has the size of a pointer),
+which makes it equal in memory consumption to the doubly-linked smart
+pointer. However, if more than one reference-counting smart pointer
+points to the same object, it immediately is more memory-efficient
+than the doubly-linked smart pointer.
+
+<p>Also creating and destroying such smart pointers becomes faster,
+as the <code>FSBAllocator2</code> is used for allocating and deallocating the
+reference counters.
+
+<p>The <code>"FSBAllocator.hh"</code> header defines an allocator name
+for this specific purpose: <code>FSBRefCountAllocator</code> (which is
+simply a shortcut for <code>FSBAllocator2&lt;size_t&gt;</code>).
+
+<p>Also an example smart pointer implementation is supplied, as the
+<code>"SmartPtr.hh"</code> file.
+
+<h3>Benchmark</h3>
+
+<p>To test the memory consumption and speed of the supplied smart pointer
+using different allocators, a simple test was run, where 15 million elements
+of type <code>double</code> were dynamically allocated to that many smart
+pointers in a vector (and then simply destroyed when the program ends),
+with the following four different allocation strategies used:
+
+<ol>
+ <li>Both the <code>double</code> and the reference counter were allocated
+     using the default allocator of the compiler.
+ <li>The <code>double</code> was allocated with the default allocator,
+     but the reference counter was allocated with
+     <code>FSBRefCountAllocator</code>.
+ <li>Both the <code>double</code> and the reference counter were allocated
+     using <code>FSBAllocator</code>.
+ <li>The <code>double</code> was allocated with <code>FSBAllocator</code>,
+     and the reference counter was allocated with
+     <code>FSBRefCountAllocator</code>.
+</ol>
+
+<p>The peak memory usage and the execution time of the whole program were
+the following:
+
+<ol>
+ <li>572 MB, 3.6 seconds.
+ <li>401 MB, 2.2 seconds.
+ <li>401 MB, 1.0 seconds.
+ <li>344 MB, 0.8 seconds.
+</ol>
+
+<p>The same test was repeated, but allocating objects of type <code>int</code>
+rather than of type <code>double</code>. The results were:
+
+<ol>
+ <li>572 MB, 3.6 seconds.
+ <li>401 MB, 2.2 seconds.
+ <li>344 MB, 0.9 seconds.
+ <li>287 MB, 0.8 seconds.
+</ol>
+
+<p>The memory usage numbers in the above tests are caused by how the linux
+gcc allocator behaves:
+
+<p>The size of the allocation request plus 4 bytes are
+allocated, aligned to an 8-byte boundary, with a minimum allocation of
+16 bytes. The size of a <code>double</code> element is 8 bytes and the
+size of an <code>int</code> element is 4 bytes, but the default allocator
+allocates 16 bytes in both cases.
+
+<p><code>FSBAllocator</code> has a minimum allocation size of 8 bytes (in
+32-bit systems), aligned to a 4-byte boundary. <code>FSBAllocator2</code>
+has a minimum allocation size of 4 bytes (in 32-bit systems), aligned to
+a 4-byte boundary.
+
+<a name="license"></a>
+<h2>License</h2>
+
+<p>This library is released under the MIT license.
+
+<p>Copyright (c) 2008-2011 Juha Nieminen
+
+<p>Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+<p>The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+<p>THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+</body>
+</html>

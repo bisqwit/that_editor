@@ -29,9 +29,9 @@ class JSF
             unsigned short tgt_state;
 
             unsigned char recolor = 0;
-            unsigned char strings = 0;     // 0=no strings, 1=strings, 2=istrings
-            bool     noeat    = false;
-            bool     buffer   = false;
+            unsigned char strings:6;      // 0=no strings, 1=strings, 2=istrings
+            bool     noeat:1;
+            bool     buffer:1;
 
             // If the strings option is taken, the stringtable is searched
             // for the contents of buffer (that started when "buffer" option
@@ -41,7 +41,7 @@ class JSF
             // it does not work with case-insensitive matching.
             std::vector< std::pair<std::string, unsigned short> > stringtable;
 
-            // The string table is sorted ddifferently epending on whether
+            // The string table is sorted ddifferently depending on whether
             // strings are matched in case-sensitive or insensitive manner.
             void SortStringTable();
 
@@ -50,14 +50,20 @@ class JSF
         };
 
         // An array is precalculated for 256 characters.
-        pointer_array<option, 256> options;
+        /* Because we can possibly run in DOS environment as well, it makes sense
+         * to reduce the memory usage of this program as much as possible (hah!).
+         * To that end, we use this size-optimized "pointer_array" structure
+         * rather than a simple option* options[256];.
+         */
+        pointer_array<option*, 256> options;
 
         state() = default;
         state(state&&) = default;
         state& operator=(state&&) = default;
     };
 
-    std::vector<state> states;
+    std::vector<state>         states;
+    std::vector<state::option> options;
 
 public:
     // Load the given .jsf file
@@ -117,14 +123,14 @@ public:
             Recolor(state.recolor, s.attr);
             state.recolor = 0;
 
-            const auto* o = s.options.Get( (unsigned char) state.c );
-            state.recolor  = o->recolor;
-            state.noeat    = o->noeat;
-            state.state_no = o->tgt_state; // Choose the default target state
-            if(o->strings)
+            const auto& o = *s.options.Get( (unsigned char) state.c );
+            state.recolor  = o.recolor;
+            state.noeat    = o.noeat;
+            state.state_no = o.tgt_state; // Choose the default target state
+            if(o.strings)
             {
-                auto i = o->SearchStringTable(state.buffer);
-                if(i != o->stringtable.end())
+                auto i = o.SearchStringTable(state.buffer);
+                if(i != o.stringtable.end())
                 {
                     state.state_no = i->second;
                     state.recolor  = state.buffer.size() + 1;
@@ -135,7 +141,7 @@ public:
             {
                 state.buffer += state.c;
             }
-            if(o->buffer)
+            if(o.buffer)
             {
                 state.buffer.clear();
                 state.buffer += state.c;

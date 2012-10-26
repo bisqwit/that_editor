@@ -1,8 +1,7 @@
 #include <cstring>
-#include <map>
 #include <algorithm>
+#include <utility>
 #include <vector>
-#include <list>
 
 #include "syntax.hh"
 
@@ -72,31 +71,92 @@ void JSF::Parse(std::FILE* fp, bool quiet)
         std::fprintf(stdout, "Parsing syntax file... "); std::fflush(stdout);
     }
 
-    std::map<std::string, AttrType> colors_by_name;
-    std::map<std::string, unsigned short> statenumbers_by_name;
-
-    states.clear();
-    std::list<state::option*> options;
-    unsigned short current_state = 0;
+    std::vector< std::pair<std::string, AttrType> > colornames;
+    std::vector< std::string > statenames;
 
     auto GetStateByName = [&](const std::string& s) -> unsigned short
     {
-        auto i = statenumbers_by_name.lower_bound(s);
-        if(i != statenumbers_by_name.end() && i->first == s)
-            return i->second;
-        unsigned short r = states.size();
-        statenumbers_by_name.insert(i, {s,r});
-        states.emplace_back( );
-        return r;
+        auto i = std::lower_bound(statenames.begin(), statenames.end(), s);
+        if(i == statenames.end() || *i != s)
+        {
+            if(!quiet)
+                std::fprintf(stderr, "Unknown state name: '%s'\n", s.c_str());
+            return 0;
+        }
+        return std::distance(statenames.begin(), i);
+    };
+    auto GetColorByName = [&](const std::string& s) -> const AttrType
+    {
+        auto i = std::lower_bound(colornames.begin(), colornames.end(), s,
+            []( const std::pair<std::string, AttrType>& p1,
+                const std::string& p2) -> bool
+            {
+                return p1.first < p2;
+            });
+        if(i == colornames.end() || i->first != s)
+        {
+            if(!quiet)
+                std::fprintf(stderr, "Unknown color name: '%s'\n", s.c_str());
+            return AttrType();
+        }
+        return i->second;
     };
 
-    // Scan for states
-    while(std::fgets(Buf, sizeof(Buf), fp))
-        if(Buf[0] == ':')
-            ++current_state;
-    std::rewind(fp);
-    states.reserve(current_state);
+    // Count states and options
+    if(true)
+    {
+        std::size_t n_states = 0;
+        std::size_t n_colors = 0;
+        while(std::fgets(Buf, sizeof(Buf), fp))
+        {
+            if(Buf[0] == ':') ++n_states;
+            if(Buf[0] == '=') ++n_colors;
+        }
+        std::rewind(fp);
+        statenames.reserve(n_states);
+        colornames.reserve(n_colors);
+        // Save colors and state-name
+        while(std::fgets(Buf, sizeof(Buf), fp))
+        {
+            cleanup(Buf);
+            if(Buf[0] == '=') // Color
+            {
+                char* line = Buf+1;
+                while(*line==' '||*line=='\t') ++line;
+                char* namebegin = line;
+                while(*line && *line != ' ' && *line!='\t') ++line;
+                char* nameend = line;
+                while(*line==' '||*line=='\t') ++line;
+                *nameend = '\0';
+                colornames.emplace_back( namebegin, AttrType::ParseJSFattribute(line) );
+            }
+            if(Buf[0] == ':') // State
+            {
+                char* line = Buf+1;
+                while(*line==' '||*line=='\t') ++line;
+                char* namebegin = line;
+                while(*line && *line != ' ' && *line!='\t') ++line;
+                char* nameend = line;
+                while(*line==' '||*line=='\t') ++line;
+                *nameend = '\0';
+                // Now namebegin=name, line=colorname
+                statenames.push_back(namebegin);
+            }
+        }
+        std::sort(colornames.begin(), colornames.end(),
+                    []( const std::pair<std::string,AttrType>& a,
+                        const std::pair<std::string,AttrType>& b) -> bool
+                    {
+                        return a.first < b.first;
+                    });
+        std::sort(statenames.begin(), statenames.end());
+        std::rewind(fp);
+        states.resize(n_states);
+    }
 
+    unsigned short current_state = 0;
+
+    // Scan for states
     while(std::fgets(Buf, sizeof(Buf), fp))
     {
         // Remove comments and trailing space from the buffer
@@ -106,18 +166,8 @@ void JSF::Parse(std::FILE* fp, bool quiet)
         switch(Buf[0])
         {
             case '=': // Parse color declaration
-            {
-                char* line = Buf+1;
-                while(*line==' '||*line=='\t') ++line;
-                char* namebegin = line;
-                while(*line && *line != ' ' && *line!='\t') ++line;
-                char* nameend = line;
-                while(*line==' '||*line=='\t') ++line;
-                *nameend = '\0';
+                break; // Already done
 
-                colors_by_name[namebegin] = AttrType::ParseJSFattribute(line);
-                break;
-            }
             case ':': // Parse beginning of state
             {
                 // Parse beginning of state
@@ -129,18 +179,8 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 while(*line==' '||*line=='\t') ++line;
                 *nameend = '\0';
                 // Now namebegin=name, line=colorname
-
-                auto i = colors_by_name.find(line);
-                AttrType attr = AttrParseError;
-                if(i == colors_by_name.end())
-                {
-                    if(!quiet)
-                        std::fprintf(stdout, "Unknown color: '%s'\n", line);
-                }
-                else
-                    attr = i->second;
-
-                current_state = GetStateByName(namebegin);
+                current_state              = GetStateByName(namebegin);
+                states[current_state].attr = GetColorByName(line);
                 break;
             }
             case ' ':
@@ -149,15 +189,17 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 char* line = Buf;
                 while(*line == ' ' || *line == '\t') ++line;
 
-                options.push_front( new state::option );
-                auto& o = *options.front();
+                state::option* o = new state::option;
+                o->strings = 0;
+                o->noeat   = false;
+                o->buffer  = false;
 
                 {auto& s = states[current_state];
                 switch(*line)
                 {
                     case '*': // Match every character
                         for(unsigned a=0; a<256; ++a)
-                            s.options.Set(a, &o);
+                            s.options.Set(a, o);
                         ++line;
                         break;
                     case '"': // Match characters in this string
@@ -183,11 +225,11 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                                         case 'v': *line = '\v'; break;
                                         case 'b': *line = '\b'; break;
                                     }
-                                do s.options.Set(first, &o);
+                                do s.options.Set(first, o);
                                 while(first++ != (unsigned char)*line);
                             }
                             else
-                                s.options.Set(first, &o);
+                                s.options.Set(first, o);
                         }
                         if(*line == '"') ++line;
                         break;
@@ -199,7 +241,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 while(*line == ' ' || *line == '\t') ++line;
                 *nameend = '\0';
 
-                o.tgt_state = GetStateByName(namebegin);
+                o->tgt_state = GetStateByName(namebegin);
 
                 /*fprintf(stdout, "'%s' for these: ", o->state_name);
                 for(unsigned c=0; c<256; ++c)
@@ -217,27 +259,41 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                     switch(*opt_begin)
                     {
                         case 'n':
-                            if(strcmp(opt_begin+1, /*"n"*/"oeat") == 0) { o.noeat = 1; break; }
+                            if(strcmp(opt_begin+1, /*"n"*/"oeat") == 0) { o->noeat = 1; break; }
                         case 'b':
-                            if(strcmp(opt_begin, "buffer") == 0) { o.buffer = 1; break; }
+                            if(strcmp(opt_begin, "buffer") == 0) { o->buffer = 1; break; }
                         case 's':
-                            if(strcmp(opt_begin, "strings") == 0) { o.strings = 1; break; }
+                            if(strcmp(opt_begin, "strings") == 0) { o->strings = 1; break; }
                         case 'i':
-                            if(strcmp(opt_begin, "istrings") == 0) { o.strings = 2; break; }
+                            if(strcmp(opt_begin, "istrings") == 0) { o->strings = 2; break; }
                         case 'r':
                             if(strncmp(opt_begin, "recolor=", 8) == 0)
                             {
                                 int r = atoi(opt_begin+8);
                                 if(r < 0) r = -r;
-                                o.recolor = r;
+                                o->recolor = r;
                                 break;
                             }
                         default:
                             fprintf(stdout,"Unknown keyword '%s' in '%s'\n", opt_begin, namebegin);
                     }
                 }
-                if(o.strings)
+                if(o->strings)
                 {
+                    // First, count the number of strings
+                    std::size_t n_strings = 0;
+                    auto p = std::ftell(fp);
+                    while(std::fgets(Buf, sizeof(Buf), fp))
+                    {
+                        cleanup(Buf);
+                        line = Buf;
+                        while(*line == ' ' || *line == '\t') ++line;
+                        if(std::strcmp(line, "done") == 0) break;
+                        ++n_strings;
+                    }
+                    std::fseek(fp, p, SEEK_SET);
+                    o->stringtable.reserve(n_strings);
+                    // Then read the strings
                     while(std::fgets(Buf, sizeof(Buf), fp))
                     {
                         cleanup(Buf);
@@ -259,9 +315,9 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                         /*unsigned char* value_end   = (unsigned char*) line;
                         *value_end++ = '\0';*/
 
-                        o.stringtable.push_back( {key_begin, GetStateByName(value_begin)} );
+                        o->stringtable.push_back( {key_begin, GetStateByName(value_begin)} );
                     }
-                    o.SortStringTable();
+                    o->SortStringTable();
                 }
             }
         }
