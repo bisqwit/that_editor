@@ -3,6 +3,7 @@
 print "/* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */\n";
 $font = file_get_contents('characters.901225-01.bin');
 
+// PETSCII into CP437 conversion table.
 $conv = Array(
     0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, // 00
     0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
