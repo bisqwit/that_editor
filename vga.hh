@@ -80,6 +80,11 @@ void VgaGetMode()
 #endif
     if(FatMode) VidW /= 2;
     if(C64palette) { VidW -= 4; VidH -= 5; }
+    if(columns)
+    {
+        VidW /= columns;
+        VidH = (VidH-1) * columns + 1;
+    }
 }
 
 void VgaSetMode(unsigned modeno)
@@ -145,7 +150,8 @@ void VgaSetCustomMode(
     unsigned font_height,
     int is_9pix,
     int is_half/*horizontally doubled*/,
-    int is_double/*vertically doubled*/)
+    int is_double/*vertically doubled*/,
+    int num_columns)
 {
     if(C64palette)
     {
@@ -154,6 +160,16 @@ void VgaSetCustomMode(
     }
     if(FatMode)
         width *= 2;
+
+    VidW = width;
+    VidH = height;
+
+    // When columns are used:
+    if(num_columns)
+    {
+        width *= num_columns;
+        height = (height-1) / num_columns + 1;
+    }
 
 #ifdef __BORLANDC__
     unsigned hdispend = width;
@@ -419,13 +435,11 @@ void VgaSetCustomMode(
         width -= 4; height -= 5;
     }
 
-    VidW = width;
-    VidH = height;
     VidCellHeight = font_height;
     VgaGetFont();
 }
 
-inline unsigned short* GetVidMem(unsigned x, unsigned y)
+inline unsigned short* GetVidMem(unsigned x, unsigned y, int real=0)
 {
     if(C64palette)
     {
@@ -436,7 +450,18 @@ inline unsigned short* GetVidMem(unsigned x, unsigned y)
     }
     else
     {
-        register unsigned offs = x + y * VidW;
+        register unsigned width = VidW * columns;
+        if(real || columns == 1 || y == 0)
+        {
+            register unsigned offs = x + y * width;
+            if(FatMode) offs <<= 1;
+            return VidMem + offs;
+        }
+        register unsigned lines_per_real_screen = (VidH-1) / columns;
+        register unsigned offs =
+            x
+          + ((y-1) % lines_per_real_screen + 1) * width
+          + ((y-1) / lines_per_real_screen) * VidW;
         if(FatMode) offs <<= 1;
         return VidMem + offs;
     }

@@ -15,6 +15,8 @@ volatile unsigned long MarioTimer = 0;
 static unsigned long chars_file  = 0;
 static unsigned long chars_typed = 0;
 
+static int use9bit, dblw, dblh, columns=1;
+
 // Return just the filename part of pathfilename
 const char* fnpart(const char* fn)
 {
@@ -301,8 +303,15 @@ void VisSoftCursor(int mode)
 void VisPutCursorAt(unsigned cx,unsigned cy)
 {
 #ifdef __BORLANDC__
+    if(columns > 1)
+    {
+        register unsigned short h = (VidH-1) / columns;
+        cx += ((cy-1) / h) * VidW;
+        cy =  ((cy-1) % h) + 1;
+    }
     if(FatMode) cx *= 2;
     unsigned char cux = cx, cuy = cy;
+
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
     size = (size << 8) | (VidCellHeight-1);
     if(C64palette) size = 0x3F3F;
@@ -361,8 +370,10 @@ static void Cycles_Check()
 
 void VisRenderStatus()
 {
-    WordVecType Hdr(VidW*2);
-    unsigned short* Stat = GetVidMem(0, VidH-1);
+    unsigned StatusWidth = VidW*columns;
+
+    WordVecType Hdr(StatusWidth*2);
+    unsigned short* Stat = GetVidMem(0, (VidH-1) / columns, 1);
 
     time_t t = time(0);
     struct tm* tm = localtime(&t);
@@ -375,32 +386,98 @@ void VisRenderStatus()
     tm->tm_sec  = time%60;
     */
 
-    int showfn = VidW > 60;
-    char Buf1[80], Buf2[80];
-    sprintf(Buf1, "%s%sRow %-5u/%u Col %-5u",
-        showfn ? fnpart(CurrentFileName) : "",
-        showfn ? " " : "",
+    // LEFT-size parts
+    char Part1[64]; sprintf(Part1, fnpart(CurrentFileName));
+    char Part2[64]; sprintf(Part2, "Row %-5u/%u Col %u",
         (unsigned) (Cur.y+1),
         (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
         (unsigned) (Cur.x+1));
-    //sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
-    //sprintf(Buf2, "+26 ");
-    { //unsigned l = sprintf(Buf2, "%lu/%lu C +21øC", chars_file, chars_typed);
-      unsigned l = sprintf(Buf2, "%02d:%02d:%02d %lu/%lu ",
-        tm->tm_hour,tm->tm_min,tm->tm_sec,
-        chars_file, chars_typed);
-      if(VidW >= 65)
-      {
-        sprintf(Buf2+l, " %d MHz", (int)(CPUinfo() * 1e-6));
-        FixMarioTimer();
-    } }
 
-    unsigned x1a = VidW*12/70;
-    unsigned x2a = VidW*55/70;
-    if(showfn) x1a = 7;
+    // RIGHT-side parts
+    char Part3[16]; sprintf(Part3, "%02d:%02d:%02d",
+        tm->tm_hour,tm->tm_min,tm->tm_sec);
+    char Part4[32]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed);
+    static const char Part5[] = "+14.8øC";
+
+    // Because running CPUinfo() interferes with our PIT clock,
+    // only run the CPU speed check maybe twice in a second.
+    static float cpuspeed = 0.0;
+    static unsigned long last_check_when = 0;
+    unsigned long now_when = (*(unsigned long*)MK_FP(0x40,0x6C)) & ~7ul;
+    if(last_check_when != now_when)
+    {
+        cpuspeed = CPUinfo();
+        FixMarioTimer();
+        last_check_when = now_when;
+        Cycles_Check();
+    }
+    char Part6[32];
+    if(cpuspeed >= 1e9)
+        sprintf(Part6, "%1d.%1d GHz",
+            (int)(cpuspeed * 1e-9),
+            (int)(cpuspeed * 1e-8) % 10
+        );
+    else
+        sprintf(Part6, "%3d MHz", (int)(cpuspeed * 1e-6));
+
+    const char* Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
+    const char Prio[6]   = {10,    13,  7,    4,    0,    2    };
+    enum { NumParts = sizeof(Parts) / sizeof(*Parts) };
+
+    static unsigned left_parts  = 0;
+    static unsigned right_parts = 0;
+    static unsigned last_check_width = 0;
+    if(last_check_width != StatusWidth)
+    {
+        // When video width changes, determine which parts we can fit on the screen
+        unsigned columns_remaining = StatusWidth - 8;
+        last_check_width = StatusWidth;
+        unsigned lengths[NumParts];
+        for(unsigned n=0; n<6; ++n) lengths[n] = strlen(Parts[n]);
+        left_parts  = 1;
+        right_parts = 0;
+        unsigned best_length = 0, best_prio = 0;
+        for(unsigned combination = 0; combination < (1 << NumParts); ++combination)
+        {
+            unsigned length = 0, prio = 0;
+            for(unsigned n=0; n<NumParts; ++n)
+                if(combination & (1 << n))
+                {
+                    if(length) ++length;
+                    length += lengths[n];
+                    prio   += Prio[n];
+                }
+            if(length > columns_remaining) continue;
+            if((length+prio) > (best_length+best_prio))
+            {
+                best_length = length;
+                best_prio   = prio;
+                left_parts  = combination & 3;
+                right_parts = combination & ~3;
+            }
+        }
+    }
+
+    char Buf1[256]; Buf1[0] = '\0';
+    char Buf2[256]; Buf2[0] = '\0';
+
+    { unsigned leftn=0, leftl=0;
+      unsigned rightn=0, rightl=0;
+      // Put all left-parts in Buf1, space separated
+      // Put all right-parts in Buf2, space separated
+      for(unsigned n=0; n<NumParts; ++n)
+      {
+        unsigned bit = 1 << n;
+        if(left_parts & bit)  { if(leftn++) Buf1[leftl++] = ' ';   leftl += sprintf(Buf1+leftl, "%s", Parts[n]); }
+        if(right_parts & bit) { if(rightn++) Buf2[rightl++] = ' '; rightl += sprintf(Buf2+rightl, "%s", Parts[n]); }
+      }
+    }
+
+    unsigned x1a = 7;
+    unsigned x2a = StatusWidth-1 - strlen(Buf2);
+    if(x2a & 0x8000) x2a = x1a + strlen(Buf1) + 1;
     unsigned x1b = x1a + strlen(Buf1);
     unsigned x2b = x2a + strlen(Buf2);
-    if(x2b >= VidW) { x2b = VidW-1; x2a = x2b - strlen(Buf2); }
 
     static const unsigned char slide[] = {3,7,7,7,7,3,3,2};
     static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
@@ -408,9 +485,9 @@ void VisRenderStatus()
     static const float Bayer[16] = { f(0),f(8),f(4),f(12),f(2),f(10),f(6),f(14),
                                      f(3),f(11),f(7),f(15),f(1),f(9),f(5),f(13) };
     #undef f
-    {for(unsigned x=0; x<VidW; ++x)
+    {for(unsigned x=0; x<StatusWidth; ++x)
     {
-        float xscale = x * (sizeof(slide)-1) / float(VidW-1);
+        float xscale = x * (sizeof(slide)-1) / float(StatusWidth-1);
         unsigned c1 = slide[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
         unsigned c2 = slide[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
         unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
@@ -434,9 +511,9 @@ void VisRenderStatus()
             Hdr[x] = color;
     }}
     if(StatusLine[0])
-        {for(unsigned p=0,x=0; x<VidW; ++x)
+        {for(unsigned p=0,x=0; x<StatusWidth; ++x)
         {
-            float xscale = x * (sizeof(slide2)-1) / float(VidW-1);
+            float xscale = x * (sizeof(slide2)-1) / float(StatusWidth-1);
             unsigned c1 = slide2[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
             unsigned c2 = slide2[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
             unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
@@ -459,7 +536,7 @@ void VisRenderStatus()
                 Stat[x] = color;
             if(StatusLine[p]) ++p;
         }}
-    MarioTranslate(&Hdr[0], GetVidMem(0,0), VidW);
+    MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);
 
 #ifdef __BORLANDC__
     if(0 && !kbhit())
@@ -698,6 +775,11 @@ void AddRedo(const UndoEvent& event)
          for(cn=0; cn<MaxSavedCursors; ++cn) \
              { Anchor& c = SavedCursors[cn]; o(); } \
     } while(0)
+#define TheOtherCursors() \
+    do { int cn; \
+         for(cn=MaxSavedCursors; cn<NumCursors; ++cn) \
+             { Anchor& c = SavedCursors[cn]; o(); } \
+    } while(0)
 
 void PerformEdit(
     unsigned x, unsigned y,
@@ -801,7 +883,11 @@ void PerformEdit(
             // Update cursors
             #define o() if(c.y == y && c.x >= x) { c.y += insert_newline_count; c.x -= x; } \
                    else if(c.y > y) { c.y += insert_newline_count; }
-            AllCursors();
+            AlmostAllCursors();
+            #undef o
+            #define o() if(c.y == y && c.x > x) { c.y += insert_newline_count; c.x -= x; } \
+                   else if(c.y > y) { c.y += insert_newline_count; }
+            TheOtherCursors();
             #undef o
         }
         unsigned insert_beginpos = 0;
@@ -822,6 +908,11 @@ void PerformEdit(
                     insert_chars.begin() + p );
                 #define o() if(c.y == y && c.x >= x) c.x += n_inserted
                 AlmostAllCursors();
+                #undef o
+                // For block begin & end markers, don't move them
+                // if they are right at the cursor's location.
+                #define o() if(c.y == y && c.x > x) c.x += n_inserted
+                TheOtherCursors();
                 #undef o
                 x += n_inserted;
                 insert_beginpos = p;
@@ -970,8 +1061,6 @@ void FindPair()
             if(c == '}' || c == ']' || c == ')') --balance;
         }
 }
-
-int use9bit, dblw, dblh;
 
 int SelectFont()
 {
@@ -1361,9 +1450,9 @@ void ResizeAsk() // Ask for new screen dimensions
 
 int main(int argc, char**argv)
 {
-  #if 0
+  #if 1
     // Set mode (for dosbox recording)
-    VgaSetCustomMode(80,25,16,1,0,0);
+    //VgaSetCustomMode(80,50,16,1,0,0, 2); columns = 2;
   #endif
 
 #ifdef __BORLANDC__
@@ -1742,7 +1831,8 @@ int main(int argc, char**argv)
                             if(VidW > 240) VidW = 240;
                             if(VidH > 127) VidH = 127;
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                                             use9bit, dblw, dblh);
+                                             use9bit, dblw, dblh,
+                                             columns);
                             char FPSstr[64] = "";
                             if(VidW >= 40)
                             {
@@ -1890,7 +1980,7 @@ exit:;
         FatMode=0;
         C64palette=0;
         VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                         use9bit, dblw, dblh);
+                         use9bit, dblw, dblh, columns);
     }
     VisSetCursor();
 #ifdef __BORLANDC__
