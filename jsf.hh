@@ -175,6 +175,7 @@ private:
         *nameend = '\0';
         table_item tmp;
         tmp.token = strdup(namebegin);
+        if(!tmp.token) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
         tmp.state = (struct state*) attr;
         colortable.push_back(tmp);
     }
@@ -187,8 +188,10 @@ private:
         while(*line==' '||*line=='\t') ++line;
         *nameend = '\0';
         struct state* s = new state;
+        if(!s) fprintf(stdout, "failed to allocate new jsf state\n");
         memset(s, 0, sizeof(*s));
         s->name = strdup(namebegin);
+        if(!s->name) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
         {state* c = findstate(colortable, line);
         if(!c) { s->attr = 0x4A; fprintf(stdout,"Unknown color: '%s'\n", line); }
         else   s->attr = (long) c;}
@@ -198,6 +201,7 @@ private:
     inline void ParseStateLine(char* line, FILE* fp)
     {
         option* o = new option;
+        if(!o) fprintf(stdout, "failed to allocate new jsf option\n");
         memset(o, 0, sizeof(*o));
         while(*line == ' ' || *line == '\t') ++line;
         if(*line == '*')
@@ -245,6 +249,7 @@ private:
         while(*line == ' ' || *line == '\t') ++line;
         *nameend = '\0';
         o->state_name  = strdup(namebegin);
+        if(!o->state_name) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
         o->name_mapped = 0;
         /*fprintf(stdout, "'%s' for these: ", o->state_name);
         for(unsigned c=0; c<256; ++c)
@@ -294,6 +299,7 @@ private:
                 if(*line == '"') ++line;
 
                 char* key_begin = line = strdup(line);
+                if(!key_begin) fprintf(stdout, "strdup: failed to allocate string for %s\n", line);
                 while(*line != '"' && *line != '\0') ++line;
                 char* key_end   = line;
                 if(*line == '"') ++line;
@@ -393,10 +399,19 @@ private:
             for(unsigned a=0; a<256; ++a)
             {
                 option* o = states->options[a];
+                if(!o)
+                {
+                    fprintf(stdout, "In state '%s', character state %u/256 not specified\n", states->name, a);
+                    continue;
+                }
                 if( ! o->name_mapped)
                 {
                     char* name = o->state_name;
                     o->state = findstate( state_cache, name );
+                    if(!o->state)
+                    {
+                        fprintf(stdout, "Failed to find state called '%s' for index %u/256 in '%s'\n", name, a, states->name);
+                    }
                     free(name);
                     o->name_mapped = 1;
                     for(TabType::iterator e = o->stringtable.end(),
