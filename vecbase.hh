@@ -34,7 +34,12 @@ public:
     void Construct(const VecType& b)
     {
         data=0; len=b.len; cap=b.len;
-        if(len) { data = allocate(len); copy_construct(&data[0], &b.data[0],len); }
+        if(len)
+        {
+            data = allocate(len);
+            if(!data) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", len);
+            copy_construct(&data[0], &b.data[0],len);
+        }
     }
 
     VecType(size_type length) : data(0),len(0),cap(0)
@@ -54,6 +59,7 @@ public:
         if(len)
         {
             data = allocate(len);
+            if(!data) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", len);
             copy_construct(&data[0], &b.data[0], len);
         }
     }
@@ -99,6 +105,7 @@ public:
             destroy(&data[0], len);
             deallocate(data, cap);
             data = allocate(cap = newlen);
+            if(!data) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newlen);
             copy_construct(&data[0], first, newlen);
         }
         else if(len < newlen)
@@ -125,6 +132,7 @@ public:
             destroy(&data[0], len);
             deallocate(data, cap);
             data = allocate(cap = newlen);
+            if(!data) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newlen);
             construct(&data[0], newlen, value);
         }
         else if(len < newlen)
@@ -209,6 +217,7 @@ public:
             return data+ins_pos;
         }
         T * newdata = allocate(newcap);
+        if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newcap);
         move_construct(&newdata[0], &data[0], ins_pos);
       #ifdef UsePlacementNew
         newdata[ins_pos].Construct(value);
@@ -366,6 +375,7 @@ public:
             goto Done;
         }*/
         T * newdata = allocate(newcap);
+        if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newcap);
         move_construct(&newdata[0], &data[0], ins_pos);
         copy_construct(&newdata[ins_pos], first, count);
         move_construct(&newdata[ins_pos+count], &data[ins_pos], len-ins_pos);
@@ -405,6 +415,7 @@ public:
         if(cap < newcap)
         {
             T * newdata = allocate(newcap);
+            if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newcap);
             move_construct(&newdata[0], &data[0], len);
             destroy(&data[0], len);
             deallocate(data, cap);
@@ -437,6 +448,7 @@ public:
             // reallocation required
             size_type newcap = newlen;
             T * newdata = allocate(newcap);
+            if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newcap);
             move_construct(&newdata[0], &data[0], len);
             destroy(&data[0], len);
             deallocate(data, cap);
@@ -466,6 +478,7 @@ public:
             // reallocation required
             size_type newcap = newlen;
             T * newdata = allocate(newcap);
+            if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", newcap);
             move_construct(&newdata[0], &data[0], len);
             destroy(&data[0], len);
             deallocate(data, cap);
