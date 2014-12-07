@@ -62,8 +62,7 @@ class JSF
         state& operator=(state&&) = default;
     };
 
-    std::vector<state>         states;
-    std::vector<state::option> options;
+    std::vector<state> states;
 
 public:
     // Load the given .jsf file
@@ -97,12 +96,14 @@ public:
 
     template<typename GetFunc,      /* int() */
              typename RecolorFunc>  /* void(unsigned n,AttrType attr) */
-    void Apply(ApplyState& state, GetFunc&& Get, RecolorFunc&& Recolor)
+    void Apply(ApplyState& state, GetFunc&& Get, RecolorFunc&& Recolor) const
     {
+        // If there is no syntax, quit.
         if(states.empty()) return;
-        if(state.state_no >= states.size()) state.state_no = 0;
+        // If invalid state, reset.
+        if(state.state_no >= states.size()) state = ApplyState();
 
-        for(;;)
+        for(unsigned char stuck_counter = 0; stuck_counter < 128; ++stuck_counter)
         {
             /*fprintf(stdout, "[State %s]", state.s->name);*/
             if(state.noeat)
@@ -114,6 +115,7 @@ public:
             {
                 int ch = Get();
                 if(ch < 0) break;
+                stuck_counter = 0;
                 state.c = UnicodeToASCIIapproximation(ch);
                 state.recolor += 1;
             }

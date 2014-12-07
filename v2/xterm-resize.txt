@@ -1,0 +1,5 @@
+To resize window in xterm, do:
+	\e[8;140;140t
+
+May require in .Xdefaults:
+	xterm*allowWindowOps: true

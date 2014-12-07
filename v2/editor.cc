@@ -49,7 +49,7 @@ void Editor::PerformEdit(
 
     if(x > eol_x) x = eol_x;
 
-    UndoEvent event = {x,y, n_delete, {}};
+    UndoEvent event{x,y, n_delete, std::vector<Cell>{}};
 
     chars_file += insert_chars.size();
 
@@ -1272,6 +1272,7 @@ void Editor::Act_SplitWindow(std::size_t which_window, bool sidebyside)
 void Editor::Act_CloseWindow(std::size_t which_window)
 {
     const Window& w = windows[which_window];
+    // TODO
 }
 
 void Editor::Act_ReloadSyntaxColor(const std::string& jsf_filename)

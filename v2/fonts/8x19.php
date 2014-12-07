@@ -5,17 +5,11 @@ print "/* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma *
 
 require 'font_gen.php';
 
-$fontfile   = null;
-$outputfile = null;
-$globalname = null;
-
-$options = getopt('f:o:n:', Array('font:','output:','name:'));
-foreach($options as $k=>$v)
-{
-  if($k=='f' || $k=='font')   $fontfile = $v;
-  if($k=='o' || $k=='output') $outputfile = $v;
-  if($k=='n' || $k=='name')   $globalname = $v;
-}
+#$fontfile   = 'vga8x19.bdf';
+$fontfile   = '6x9.bdf';
+#$fontfile   = '8x32.bdf';
+$outputfile = '8x19.inc';
+$globalname = "font8x19";
 
 $chno = 0;
 $data = Array();
@@ -115,12 +109,14 @@ foreach(explode("\n",file_get_contents($fontfile)) as $line)
   }
 }
 
-#for($n=0; $n<256*$fontheight*ceil($fontwidth/8); ++$n)
-#  if(!isset($bitmap[$n]))
-#    $bitmap[$n] = 0;
+for($n=0; $n<256*$fontheight*ceil($fontwidth/8); ++$n)
+  if(!isset($bitmap[$n]))
+    $bitmap[$n] = 0;
 ksort($bitmap);
 
-ob_start();
+
+
+#ob_start();
 
 print "namespace ns_$globalname {\n";
 
@@ -136,10 +132,6 @@ print "{\n";
 print "    virtual const unsigned char* GetBitmap() const { return ns_$globalname::bitmap; }\n";
 print "    virtual unsigned GetIndex(char32_t c) const { return ns_$globalname::unicode_to_bitmap_index[c]; }\n";
 print "};\n";
-print "static UIfontBase* Get{$globalname}()\n";
-print "{\n";
-print "    static $globalname f;\n";
-print "    return &f;\n";
-print "}\n";
 
-file_put_contents($outputfile, ob_get_clean());
+
+#file_put_contents($outputfile, ob_get_clean());

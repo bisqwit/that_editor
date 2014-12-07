@@ -23,16 +23,15 @@ void pointer_array<T,Dimension>::Set(std::size_t index, T ptr)
         return;
     }
 
-    std::size_t found_pos = ~size_t(0);
+    std::size_t found_pos = distinct_options.size();
     for(std::size_t b=distinct_options.size(), a=0; a<b; ++a)
         if(distinct_options[a] == ptr)
         {
             found_pos = a;
             break;
         }
-    if(found_pos == ~size_t(0))
+    if(found_pos == distinct_options.size())
     {
-        found_pos = distinct_options.size();
         if(found_pos >= max_distinct)
         {
             // Convert into a flat array
@@ -41,17 +40,20 @@ void pointer_array<T,Dimension>::Set(std::size_t index, T ptr)
                 for(unsigned c=0; c<Dimension; ++c)
                     if(bitsets[a].test(c))
                         o[c] = distinct_options[a+1];
+
             distinct_options.swap(o);
             bitsets.clear();
-            distinct_options[index] = ptr;
+
+            distinct_options[index] = (ptr);
             return;
         }
-        distinct_options.push_back( (ptr) );
-        bitsets.emplace_back(  );
+        if(!distinct_options.empty())
+            bitsets.emplace_back(  );
+        distinct_options.emplace_back( (ptr) );
     }
 
     for(std::size_t b=bitsets.size(), a=0; a<b; ++a)
-        if(found_pos+1 == a)
+        if(found_pos == a+1)
             bitsets[a].set(index);
         else
             bitsets[a].reset(index);

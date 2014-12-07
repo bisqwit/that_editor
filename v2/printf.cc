@@ -153,7 +153,7 @@ namespace
     template<typename T>
     struct PrintfFormatDo<T, 4> // strings
     {
-        typedef typename T::value_type ctype;
+        using ctype = typename T::value_type;
 
         static void Do(PrintfFormatter::argsmall& arg, std::basic_string<char32_t> & result, const T& part);
         static long long IntValue(const T& part);
@@ -346,9 +346,9 @@ void PrintfFormatter::ExecutePart(PrintfFormatter::State& state, T part)
     std::size_t position = state.position, pos = position / 4,  subpos = position % 4;
     if(pos >= formats.size()) return;
 
-    typedef
+    using TT =
         typename std::remove_cv<
-        typename std::remove_reference<T>::type>::type TT;
+        typename std::remove_reference<T>::type>::type;
 
     if(subpos == 0)
     {

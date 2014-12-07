@@ -142,7 +142,7 @@ class Editor
     void StatusClear()           { StatusLine.clear(); }
 
     template<typename... T>
-    void StatusPrintf(T... args) { StatusLine = Printf(args...); }
+    void StatusPrintf(T&&... args) { StatusLine = Printf(std::forward<T>(args)...); }
 
     // Each window has their own top-status bar.
     // The bottom-status bar is global to the editor.

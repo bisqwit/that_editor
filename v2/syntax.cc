@@ -80,7 +80,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
         if(i == statenames.end() || *i != s)
         {
             if(!quiet)
-                std::fprintf(stderr, "Unknown state name: '%s'\n", s.c_str());
+                std::fprintf(stdout, "Unknown state name: '%s'\n", s.c_str());
             return 0;
         }
         return std::distance(statenames.begin(), i);
@@ -96,7 +96,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
         if(i == colornames.end() || i->first != s)
         {
             if(!quiet)
-                std::fprintf(stderr, "Unknown color name: '%s'\n", s.c_str());
+                std::fprintf(stdout, "Unknown color name: '%s'\n", s.c_str());
             return AttrType();
         }
         return i->second;
@@ -115,6 +115,11 @@ void JSF::Parse(std::FILE* fp, bool quiet)
         std::rewind(fp);
         statenames.reserve(n_states);
         colornames.reserve(n_colors);
+        if(n_states > 65535)
+        {
+            if(!quiet)
+                std::fprintf(stdout, "JSF file error: Too many states! 65535 is the limit.\n");
+        }
         // Save colors and state-name
         while(std::fgets(Buf, sizeof(Buf), fp))
         {
@@ -141,6 +146,8 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 *nameend = '\0';
                 // Now namebegin=name, line=colorname
                 statenames.push_back(namebegin);
+                // Can't assign data into states[] yet, because
+                // the relative ordering of statenames will change.
             }
         }
         std::sort(colornames.begin(), colornames.end(),
@@ -193,6 +200,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 o->strings = 0;
                 o->noeat   = false;
                 o->buffer  = false;
+                unsigned uses = 0;
 
                 {auto& s = states[current_state];
                 switch(*line)
@@ -200,6 +208,7 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                     case '*': // Match every character
                         for(unsigned a=0; a<256; ++a)
                             s.options.Set(a, o);
+                        uses += 256;
                         ++line;
                         break;
                     case '"': // Match characters in this string
@@ -225,15 +234,21 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                                         case 'v': *line = '\v'; break;
                                         case 'b': *line = '\b'; break;
                                     }
-                                do s.options.Set(first, o);
+                                do { s.options.Set(first, o); ++uses; }
                                 while(first++ != (unsigned char)*line);
                             }
                             else
+                            {
                                 s.options.Set(first, o);
+                                ++uses;
+                            }
                         }
                         if(*line == '"') ++line;
                         break;
-                }}//end scope for states[current_state]
+                }
+                if(!uses && !quiet)
+                    fprintf(stderr, "Warning: JSF option never used\n");
+                }//end scope for states[current_state]
                 while(*line == ' ' || *line == '\t') ++line;
                 char* namebegin = line;
                 while(*line && *line != ' ' && *line!='\t') ++line;
@@ -242,12 +257,6 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                 *nameend = '\0';
 
                 o->tgt_state = GetStateByName(namebegin);
-
-                /*fprintf(stdout, "'%s' for these: ", o->state_name);
-                for(unsigned c=0; c<256; ++c)
-                    if(s.options[c] == o)
-                        fprintf(stdout, "%c", c);
-                fprintf(stdout, "\n");*/
 
                 while(*line != '\0')
                 {
@@ -311,8 +320,8 @@ void JSF::Parse(std::FILE* fp, bool quiet)
                         *key_end++   = '\0';
 
                         char* value_begin = line;
-                        while(*line != '\0') ++line;
-                        /*unsigned char* value_end   = (unsigned char*) line;
+                        /*while(*line != '\0') ++line;
+                        unsigned char* value_end   = (unsigned char*) line;
                         *value_end++ = '\0';*/
 
                         o->stringtable.push_back( {key_begin, GetStateByName(value_begin)} );

@@ -3,17 +3,21 @@
 
 #include <bitset>
 #include <vector>
-#include <array>
 
 template<typename T, unsigned Dimension>
 class pointer_array
 {
     static_assert(Dimension != 1, "pointer_array size must be greater than 1.");
 
-    static constexpr unsigned num_distinct = 3;//NUM_DISTINCT;
-    static constexpr unsigned max_distinct = 12;//MAX_DISTINCT;
-    std::vector< T >                     distinct_options;
+    static constexpr unsigned num_distinct = 1;//NUM_DISTINCT;
+    static constexpr unsigned max_distinct = 32;//MAX_DISTINCT;
+    std::vector< T >                      distinct_options;
     std::vector< std::bitset<Dimension> > bitsets;
+
+    /* bitsets[n][m] tells whether array[m] == distinct_options[n+1].
+     * If none is set, distinct_options[0] is assumed.
+     */
+
 public:
     T    Get(std::size_t index) const;
     void Set(std::size_t index, T ptr);

@@ -47,22 +47,21 @@ public:
     }
 
     template<typename T, typename... T2>
-    void Execute(State& state, const T& a, const T2&... rest)
+    void Execute(State& state, const T& a, T2&&... rest)
     {
         // TODO: Use is_trivially_copyable in conjunction with sizeof,
         //       rather than is_pod, once GCC supports it.
         // Choose the optimal manner of parameter passing:
-        typedef
-            typename std::conditional<
-                std::is_pod<T>::value, T, const T&>::type TT;
+        using TT = typename
+            std::conditional<std::is_pod<T>::value, T, const T&>::type;
         ExecutePart<TT>(state, a);
-        Execute(state, rest...);
+        Execute(state, std::forward<T2>(rest)...);
     }
     template<typename T, std::size_t size, typename... T2>
-    void Execute(State& state, const T(& a)[size], const T2&... rest)
+    void Execute(State& state, const T(& a)[size], T2&&... rest)
     {
         ExecutePart<const T*>(state, a);
-        Execute(state, rest...);
+        Execute(state, std::forward<T2>(rest)...);
     }
 
     // When no parameters are remaining
@@ -74,30 +73,30 @@ private:
 };
 
 template<typename... T>
-std::basic_string<char32_t> Printf(PrintfFormatter& fmt, const T&... args)
+std::basic_string<char32_t> Printf(PrintfFormatter& fmt, T&&... args)
 {
     PrintfFormatter::State state;
-    fmt.Execute(state, args...);
+    fmt.Execute(state, std::forward<T>(args)...);
     return state.result;
 }
 
 
 /* This is the function you would use. */
 template<typename CT, typename... T>
-std::basic_string<char32_t> Printf(const std::basic_string<CT>& format, const T&... args)
+std::basic_string<char32_t> Printf(const std::basic_string<CT>& format, T&&... args)
 {
     PrintfFormatter Formatter;
     Formatter.MakeFrom(format);
-    return Printf(Formatter, args...);
+    return Printf(Formatter, std::forward<T>(args)...);
 }
 
 /* This is the function you would use. */
 template<typename CT, typename... T>
-std::basic_string<char32_t> Printf(const CT* format, const T&... args)
+std::basic_string<char32_t> Printf(const CT* format, T&&... args)
 {
     PrintfFormatter Formatter;
     Formatter.MakeFrom(format);
-    return Printf(Formatter, args...);
+    return Printf(Formatter, std::forward<T>(args)...);
 }
 
 #endif
