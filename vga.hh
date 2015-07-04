@@ -8,7 +8,7 @@ unsigned short VidMem[256*256];
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
 double VidFPS = 60.0;
 const unsigned char* VgaFont = 0;
-int C64palette = 0, FatMode = 0, DispUcase = 0, DCPUpalette = 1;
+int C64palette = 0, FatMode = 0, DispUcase = 0, DCPUpalette = 0;
 
 static const unsigned char c64font[8*(256-64)] = {
 #include "c64font.inc"
@@ -21,6 +21,9 @@ static const unsigned char p19font[19*256] = {
 };
 static const unsigned char p12font[12*256] = {
 #include "8x12.inc"
+};
+static const unsigned char p10font[10*256] = {
+#include "8x10.inc"
 };
 static const unsigned char p15font[15*256] = {
 #include "8x15.inc"
@@ -45,6 +48,7 @@ void VgaGetFont()
         case 16: mode = 6; break;
         case 19: case 20: { VgaFont = p19font; return; }
         case 12: { VgaFont = p12font; return; }
+        case 10: { VgaFont = p10font; return; }
         case 15: { VgaFont = p15font; return; }
         case 32: { VgaFont = FatMode ? p32wfont : p32font; return; }
         default: mode = 1; break;
@@ -113,17 +117,17 @@ void VgaSetMode(unsigned modeno)
         0xE06F8Bul,0xEB8931ul,0xFFE26Bul,0xFFFFFFul
     };
 
-    static const unsigned long primerpal[16] =
+    /*static const unsigned long primerpal[16] =
     {
         0x000000ul,0x00005Ful,0x68A141ul,0x7ABFC7ul,
         0xD75F5Ful,0x493C2Bul,0xA46422ul,0xD7D7D7ul,
         0x878787ul,0x31A2F2ul,0xA3CE27ul,0xB2DCEFul,
         0xFFAF5Ful,0xAF5FFFul,0xFFFFAFul,0xFFFFFFul
-    };
+    };*/
 
     const unsigned long* extra_pal = c64pal;
     if(!C64palette) extra_pal = dcpu16pal;
-    extra_pal = primerpal; // Special Primer version
+    //extra_pal = primerpal; // Special Primer version
 
     outportb(0x3C8, 0x20);
     for(unsigned a=0; a<16; ++a)
@@ -273,6 +277,22 @@ void VgaSetCustomMode(
             pop es
         }
     }
+    if(font_height == 10) {
+        _asm {
+            push es
+            push bp
+             mov ax, seg p10font
+             mov es, ax
+             mov bp, offset p10font
+             mov ax, 0x1100
+             mov bx, 0x0A00
+             mov cx, 256
+             mov dx, 0
+             int 0x10
+            pop bp
+            pop es
+        }
+    }
     if(font_height == 15) {
         _asm {
             push es
@@ -362,7 +382,7 @@ void VgaSetCustomMode(
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
                                  0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
                                  is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
-    //if(C64palette || (DCPUpalette && font_height == 8)) //DCPU hack
+    if(C64palette || (DCPUpalette && font_height == 8)) //DCPU/Primer/C64 hack
     {
         for(unsigned a=0; a<0x10; ++a) Att[a] = 0x20+a;
     }

@@ -1,4 +1,6 @@
 @echo off
+cycles 80000
+REM PATH=d:\editor\bin;%PATH%
 
 rem bcc -S -3 -f287 -w -w-sig -w-inl -h -ff -B -P -d -a -O -Oemvlpbig -Z -mc -I../include -L../lib main.cc
 rem bcc -B -c -3 -f287 -ff -k- -w -w-sig -w-inl -P -d -a -Z -O -Oemvlpbig -mc -I../include -L../lib main.cc
