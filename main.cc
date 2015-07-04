@@ -397,7 +397,8 @@ void VisRenderStatus()
     char Part3[16]; sprintf(Part3, "%02d:%02d:%02d",
         tm->tm_hour,tm->tm_min,tm->tm_sec);
     char Part4[32]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed);
-    static const char Part5[] = "+14.8øC";
+    //static const char Part5[] = "-2.5øC";
+    static const char Part5[] = "+24.2øC";
 
     // Because running CPUinfo() interferes with our PIT clock,
     // only run the CPU speed check maybe twice in a second.
