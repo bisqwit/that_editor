@@ -15,5 +15,6 @@
 
 #undef VecType
 #undef T
+#undef  UsePlacementNew
 
 #endif

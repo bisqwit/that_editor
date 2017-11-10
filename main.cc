@@ -17,6 +17,18 @@ static unsigned long chars_typed = 0;
 
 static int use9bit, dblw, dblh, columns=1;
 
+static inline int isalnum_(unsigned char c)
+{
+    return isalnum(c) || c == '_';
+}
+static inline int ispunct_(unsigned char c)
+{
+    return !isspace(c) && !isalnum_(c);
+}
+
+#define DOSBOX_HICOLOR_OFFSET (-0x8000l)
+
+
 // Return just the filename part of pathfilename
 const char* fnpart(const char* fn)
 {
@@ -75,7 +87,8 @@ static unsigned char kbhitbuf[] =
 #endif
 
 #include "vec_c.hh"
-#include "vec_sp.hh"
+#include "vec_s.hh"
+#include "vec_lp.hh"
 
 #include "jsf.hh"
 #include "vga.hh"
@@ -87,7 +100,7 @@ const unsigned UnknownColor = 0x2400;
 char StatusLine[256] =
 "Ad-hoc programming editor - (C) 2011-03-08 Joel Yliluoma";
 
-WordPtrVecType EditLines;
+LongPtrVecType EditLines;
 
 struct Anchor
 {
@@ -125,7 +138,7 @@ void FileLoad(char* fn)
     EditLines.clear();
 
     int hadnl = 1;
-    WordVecType editline;
+    LongVecType editline;
     int got_cr = 0;
     for(;;)
     {
@@ -180,7 +193,7 @@ void FileNew()
 {
     Win = Cur = Anchor();
     EditLines.clear();
-    WordVecType emptyline;
+    LongVecType emptyline;
     emptyline.push_back('\n' | UnknownColor);
     EditLines.push_back(emptyline);
     EditLines.push_back(emptyline);
@@ -195,7 +208,8 @@ struct ApplyEngine: public JSF::Applier
     int finished;
     unsigned nlinestotal, nlines;
     size_t x,y, begin_line;
-    unsigned pending_recolor, pending_attr;
+    unsigned pending_recolor_distance, pending_recolor;
+    unsigned long pending_attr;
     ApplyEngine()
         { Reset(0); }
     void Reset(size_t line)
@@ -226,27 +240,35 @@ struct ApplyEngine: public JSF::Applier
         //fprintf(stdout, "Gets '%c'\n", ret);
         return ret;
     }
-    virtual cdecl void Recolor(register unsigned n, register unsigned attr)
+    virtual cdecl void Recolor(register unsigned distance, register unsigned n, register unsigned long attr)
     {
         if(n < pending_recolor) FlushColor();
-        pending_recolor = n;
-        pending_attr    = attr << 8;
+        pending_recolor_distance = distance;
+        pending_recolor          = n;
+        pending_attr             = attr << 8;
     }
 private:
     void FlushColor()
     {
-        register unsigned n    = pending_recolor;
-        register unsigned attr = pending_attr;
+        register unsigned dist      = pending_recolor_distance;
+        register unsigned n         = pending_recolor + dist;
+        register unsigned long attr = pending_attr;
         //fprintf(stdout, "Recolors %u as %02X\n", n, attr);
         size_t px=x, py=y;
         for(; n > 0; --n)
         {
             if(px == 0) { if(!py) break; --py; px = EditLines[py].size()-1; }
             else --px;
-            unsigned short&w = EditLines[py][px];
-            w = (w & 0xFF) | attr;
+            if(dist > 0)
+                --dist;
+            else
+            {
+                unsigned long& w = EditLines[py][px];
+                w = (w & 0xFF) | attr;
+            }
         }
-        pending_recolor = 0;
+        pending_recolor          = 0;
+        pending_recolor_distance = 0;
     }
 };
 
@@ -321,6 +343,8 @@ void VisPutCursorAt(unsigned cx,unsigned cy)
 #else
     cx=cx; cy=cy;
 #endif
+    *(unsigned char*)MK_FP(0x40,0x50) = cx;
+    *(unsigned char*)MK_FP(0x40,0x51) = cy;
 }
 void VisSetCursor()
 {
@@ -363,6 +387,8 @@ static void Cycles_Check()
         unsigned psp = getpsp();
         sprintf( (char*) MK_FP(psp, 0x80), "%s", Buf);
 
+        // FIXME: THIS METHOD OF INVOKING CONFIG.COM DEPENDS ON EXACT DOSBOX VERSION.
+        // ALSO, IT WILL NOT WORK IF RUNNING E.G. UNDER FREEDOS...
          _asm { db 0xFE,0x38,0x06,0x00 }
     }
     Cycles_Trend = 0;
@@ -397,8 +423,7 @@ void VisRenderStatus()
     char Part3[16]; sprintf(Part3, "%02d:%02d:%02d",
         tm->tm_hour,tm->tm_min,tm->tm_sec);
     char Part4[32]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed);
-    //static const char Part5[] = "-2.5øC";
-    static const char Part5[] = "+24.2øC";
+    static const char Part5[] = "+22.5øC"; // temperature degC degrees celsius
 
     // Because running CPUinfo() interferes with our PIT clock,
     // only run the CPU speed check maybe twice in a second.
@@ -534,7 +559,10 @@ void VisRenderStatus()
             if(FatMode)
                 { Stat[x+x] = color; Stat[x+x+1] = color|0x80; }
             else
+            {
                 Stat[x] = color;
+                Stat[x+(DOSBOX_HICOLOR_OFFSET/2)] = 0;
+            }
             if(StatusLine[p]) ++p;
         }}
     MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);
@@ -551,7 +579,7 @@ void VisRenderStatus()
 }
 void VisRender()
 {
-    WordVecType EmptyLine;
+    LongVecType EmptyLine;
 
     unsigned winh = VidH - 1;
     if(StatusLine[0]) --winh;
@@ -564,14 +592,14 @@ void VisRender()
 
         unsigned ly = Win.y + y;
 
-        WordVecType* line = &EmptyLine;
+        LongVecType* line = &EmptyLine;
         if(ly < EditLines.size()) line = &EditLines[ly];
 
         unsigned lw = line->size(), lx=0, x=Win.x, xl=x + VidW;
         unsigned trail = 0x0720;
         for(unsigned l=0; l<lw; ++l)
         {
-            unsigned attr = (*line)[l];
+            unsigned long attr = (*line)[l];
             if( (attr & 0xFF) == '\n' ) break;
             ++lx;
             if(lx > x)
@@ -586,9 +614,10 @@ void VisRender()
                          | ((attr << 4u) & 0xF000u);
                 }
                 if(DispUcase && islower(attr & 0xFF))
-                    attr &= 0xFFDFu;
+                    attr &= ~0x20ul;
 
                 do {
+                    Tgt[(DOSBOX_HICOLOR_OFFSET/2)] = (attr >> 16);
                     *Tgt++ = attr;
                     if(FatMode) *Tgt++ = attr | 0x80;
                 } while(lx > ++x);
@@ -597,6 +626,7 @@ void VisRender()
         }
         while(x++ < xl)
         {
+            Tgt[(DOSBOX_HICOLOR_OFFSET/2)] = 0;
             *Tgt++ = trail;
             if(FatMode) *Tgt++ = trail | 0x80;
         }
@@ -723,7 +753,7 @@ struct UndoEvent
 {
     unsigned x, y;
     unsigned n_delete;
-    WordVecType insert_chars;
+    LongVecType insert_chars;
 };
 const unsigned   MaxUndo = 256;
 UndoEvent UndoQueue[MaxUndo];
@@ -785,7 +815,7 @@ void AddRedo(const UndoEvent& event)
 void PerformEdit(
     unsigned x, unsigned y,
     unsigned n_delete,
-    const WordVecType& insert_chars,
+    const LongVecType& insert_chars,
     char DoingUndo = 0)
 {
     unsigned eol_x = EditLines[y].size();
@@ -868,8 +898,8 @@ void PerformEdit(
 
         if(insert_newline_count > 0)
         {
-            WordVecType nlvec(1, '\n' | UnknownColor);
-            WordPtrVecType new_lines( insert_newline_count, nlvec );
+            LongVecType nlvec(1, '\n' | UnknownColor);
+            LongPtrVecType new_lines( insert_newline_count, nlvec );
             // Move the trailing part from current line to the beginning of last "new" line
             new_lines.back().assign( EditLines[y].begin() + x, EditLines[y].end() );
             // Remove the trailing part from that line
@@ -976,7 +1006,7 @@ void BlockIndent(int offset)
     }
     if(offset > 0)
     {
-        WordVecType indentbuf(offset, UnknownColor | 0x20);
+        LongVecType indentbuf(offset, UnknownColor | 0x20);
         for(unsigned y=firsty; y<=lasty; ++y)
         {
             unsigned indent = 0;
@@ -991,7 +1021,7 @@ void BlockIndent(int offset)
     else if(min_indent >= -offset)
     {
         unsigned outdent = -offset;
-        WordVecType empty;
+        LongVecType empty;
         for(unsigned y=firsty; y<=lasty; ++y)
         {
             unsigned indent = 0;
@@ -1007,7 +1037,7 @@ void BlockIndent(int offset)
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
 }
 
-void GetBlock(WordVecType& block)
+void GetBlock(LongVecType& block)
 {
     for(unsigned y=BlockBegin.y; y<=BlockEnd.y; ++y)
     {
@@ -1176,7 +1206,7 @@ int SelectFont()
                   }
                   if(c) ++q; else c = ' ';
                   c |= 0x7000;
-                  if(FatMode) { p[2*a]=c; p[2*a+1]=c|0x80; } else p[a] = c;
+                  if(FatMode) { p[2*a]=c; p[2*a+1]=c|0x80; } else { p[a] = c; p[a+(DOSBOX_HICOLOR_OFFSET/2)] = 0; } 
         }   }   }}
 
 
@@ -1193,6 +1223,7 @@ int SelectFont()
         {
             unsigned short c = p[m];
             p[m] = (c&0xFF) | ((c>>4)&0xF00) | ((c&0xF00)<<4);
+            p[m+(DOSBOX_HICOLOR_OFFSET/2)] = 0;
         }
     rewait:
         WaitInput(0);
@@ -1420,7 +1451,7 @@ void LineAskGo() // Go to line
     Cur.y = atoi(line) - 1;
     free(line);
     //Win.y = (Cur.y > DimY/2) ? Cur.y - (DimY>>1) : 0;
-    if(Win.y > Cur.y || Win.y+DimY <= Cur.y)
+    if(Win.y > Cur.y || Win.y+DimY-1 <= Cur.y)
     {
         Win.y = Cur.y > oldy
             ? (Cur.y > (DimY/2)
@@ -1447,6 +1478,72 @@ void ResizeAsk() // Ask for new screen dimensions
     }
     VidW = neww;
     VidH = newh;
+}
+
+static void k_home(void)
+{
+    unsigned indent = 0;
+    while(indent < EditLines[Cur.y].size()
+       && (EditLines[Cur.y][indent] & 0xFF) == ' ') ++indent;
+    // indent = number of spaces in the beginning of the line
+    Cur.x = (Cur.x == indent ? 0 : indent);
+}
+static void k_end(void)
+{
+    Cur.x = EditLines[Cur.y].size();
+    if(Cur.x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n')
+        --Cur.x; /* past LF */
+}
+static void k_left(void)
+{
+    if(Cur.x > EditLines[Cur.y].size())
+        Cur.x = EditLines[Cur.y].size()-1;
+    else if(Cur.x > 0) --Cur.x;
+    else if(Cur.y > 0) { --Cur.y; k_end(); }
+}
+static void k_right(void)
+{
+    if(Cur.x+1 < EditLines[Cur.y].size())
+        ++Cur.x;
+    else if(Cur.y+1 < EditLines.size())
+        { Cur.x = 0; ++Cur.y; }
+}
+static void k_ctrlleft(void)
+{
+    // Algorithm adapted from Joe 3.7
+    #define at_line_end() (Cur.y >= EditLines.size() || Cur.x >= EditLines[Cur.y].size())
+    #define at_begin() (Cur.x==0 && Cur.y==0)
+    #define cur_ch     (EditLines[Cur.y][Cur.x]&0xFF)
+
+    // First go one left.
+    k_left();
+    // Skip possible space
+    while(!at_begin() && (at_line_end() || isspace(cur_ch) || ispunct_(cur_ch))) { k_left(); }
+    // Then skip to the beginning of the current word
+    while(!at_begin() && !at_line_end() && isalnum_(cur_ch)) { k_left(); }
+    // Then undo the last k_left, unless we're at the beginning of the file
+    if(!at_begin()) k_right();
+
+    #undef cur_ch
+    #undef at_begin
+    #undef at_line_end
+}
+static void k_ctrlright(void)
+{
+    // Algorithm adapted from Joe 3.7
+    #define at_line_end() (Cur.y >= EditLines.size() || Cur.x >= EditLines[Cur.y].size())
+    #define at_end()      (Cur.y >= EditLines.size() || ((Cur.y+1) == EditLines.size() && Cur.x == EditLines[Cur.y].size()))
+    #define cur_ch        (EditLines[Cur.y][Cur.x]&0xFF)
+    if(at_end()) return;
+
+    // First skip possible space
+    while(!at_end() && (at_line_end() || isspace(cur_ch) || ispunct_(cur_ch))) { k_right(); }
+    // Then skip to the end of the current word
+    while(!at_line_end() && isalnum_(cur_ch)) { k_right(); }
+
+    #undef cur_ch
+    #undef at_end
+    #undef at_line_end
 }
 
 int main(int argc, char**argv)
@@ -1567,7 +1664,7 @@ int main(int argc, char**argv)
                         break;
                     case 'm': case 'M': case CTRL('M'): // move block
                     {
-                        WordVecType block, empty;
+                        LongVecType block, empty;
                         GetBlock(block);
                         PerformEdit(BlockBegin.x,BlockBegin.y, block.size(), empty);
                         // Note: ^ Assumes Cur.x,Cur.y get updated here.
@@ -1579,7 +1676,7 @@ int main(int argc, char**argv)
                     }
                     case 'c': case 'C': case CTRL('C'): // paste block
                     {
-                        WordVecType block;
+                        LongVecType block;
                         GetBlock(block);
                         unsigned x = Cur.x, y = Cur.y;
                         PerformEdit(Cur.x,Cur.y, InsertMode?0u:block.size(), block);
@@ -1589,7 +1686,7 @@ int main(int argc, char**argv)
                     }
                     case 'y': case 'Y': case CTRL('Y'): // delete block
                     {
-                        WordVecType block, empty;
+                        LongVecType block, empty;
                         GetBlock(block);
                         PerformEdit(BlockBegin.x,BlockBegin.y, block.size(), empty);
                         BlockEnd.x = BlockBegin.x;
@@ -1645,7 +1742,7 @@ int main(int argc, char**argv)
                     case '\'': // Insert literal character
                     {
                         c = getch();
-                        WordVecType txtbuf(1, 0x0700 | (c & 0xFF));
+                        LongVecType txtbuf(1, 0x0700 | (c & 0xFF));
                         if( (c & 0xFF) == 0)
                         {
                             txtbuf.push_back( 0x0700 | (c >> 8) );
@@ -1690,11 +1787,6 @@ int main(int argc, char**argv)
                         break;
                     case 0x47: // home
                     {
-                        #define k_home() do { \
-                            unsigned x = 0; \
-                            while(x < EditLines[Cur.y].size() \
-                               && (EditLines[Cur.y][x] & 0xFF) == ' ') ++x; \
-                            if(Cur.x == x) Cur.x = 0; else Cur.x = x; } while(0)
                     home:
                         k_home();
                         Win.x = 0;
@@ -1702,10 +1794,6 @@ int main(int argc, char**argv)
                         break;
                     }
                     case 0x4F: // end
-                        #define k_end() do { \
-                            Cur.x = EditLines[Cur.y].size(); \
-                            if(Cur.x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n') \
-                                --Cur.x; /* past LF */ } while(0)
                     end:
                         k_end();
                         Win.x = 0;
@@ -1713,11 +1801,6 @@ int main(int argc, char**argv)
                         break;
                     case 'K': // left
                     {
-                        #define k_left() do { \
-                            if(Cur.x > EditLines[Cur.y].size()) \
-                                Cur.x = EditLines[Cur.y].size()-1; \
-                            else if(Cur.x > 0) --Cur.x; \
-                            else if(Cur.y > 0) { --Cur.y; k_end(); } } while(0)
                     lt_key:
                         k_left();
                         if(shift && ENABLE_DRAG) dragalong = 1;
@@ -1725,11 +1808,6 @@ int main(int argc, char**argv)
                     }
                     case 'M': // right
                     {
-                        #define k_right() do { \
-                            if(Cur.x+1 < EditLines[Cur.y].size()) \
-                                ++Cur.x; \
-                            else if(Cur.y+1 < EditLines.size()) \
-                                { Cur.x = 0; ++Cur.y; } } while(0)
                     rt_key:
                         k_right();
                         if(shift && ENABLE_DRAG) dragalong = 1;
@@ -1737,24 +1815,13 @@ int main(int argc, char**argv)
                     }
                     case 0x73: // ctrl-left (go left on word boundary)
                     {
-                        k_left();
-                        do k_left();
-                        while( (Cur.x > 0 || Cur.y > 0)
-                            && isalnum(EditLines[Cur.y][Cur.x]&0xFF));
-                        k_right();
+                        k_ctrlleft();
                         if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
                     case 0x74: // ctrl-right (go right on word boundary)
                     {
-                        while( Cur.y < EditLines.size()
-                            && Cur.x < EditLines[Cur.y].size()
-                            && isalnum(EditLines[Cur.y][Cur.x]&0xFF) )
-                            k_right();
-                        do k_right();
-                        while( Cur.y < EditLines.size()
-                            && Cur.x < EditLines[Cur.y].size()
-                            && !isalnum(EditLines[Cur.y][Cur.x]&0xFF) );
+                        k_ctrlright();
                         if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
@@ -1792,7 +1859,7 @@ int main(int argc, char**argv)
                         unsigned eol_x = EditLines[Cur.y].size();
                         if(eol_x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n') --eol_x;
                         if(Cur.x > eol_x) { Cur.x = eol_x; break; } // just do end-key
-                        WordVecType empty;
+                        LongVecType empty;
                         PerformEdit(Cur.x,Cur.y, 1u, empty);
                         WasAppend = 1;
                         break;
@@ -1893,13 +1960,13 @@ int main(int argc, char**argv)
             case CTRL('Y'): // erase line
             {
                 Cur.x = 0;
-                WordVecType empty;
+                LongVecType empty;
                 PerformEdit(Cur.x,Cur.y, EditLines[Cur.y].size(), empty);
                 break;
             }
             case CTRL('H'): // backspace = left + delete
             {
-                WordVecType empty;
+                LongVecType empty;
                 unsigned nspaces = 0;
                 while(nspaces < EditLines[Cur.y].size()
                    && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
@@ -1928,7 +1995,7 @@ int main(int argc, char**argv)
             case CTRL('I'):
             {
                 unsigned nspaces = TabSize - Cur.x % TabSize;
-                WordVecType txtbuf(nspaces, 0x0720);
+                LongVecType txtbuf(nspaces, 0x0720);
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:nspaces, txtbuf);
                 break;
             }
@@ -1943,7 +2010,7 @@ int main(int argc, char**argv)
                        && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
                     if(Cur.x < nspaces) nspaces = Cur.x;
                 }
-                WordVecType txtbuf(nspaces + 1, 0x0720);
+                LongVecType txtbuf(nspaces + 1, 0x0720);
                 txtbuf[0] = 0x070A; // newline
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
                 //Win.x = 0;
@@ -1952,7 +2019,7 @@ int main(int argc, char**argv)
             }
             default:
             {
-                WordVecType txtbuf(1, 0x0700 | c);
+                LongVecType txtbuf(1, 0x0700 | c);
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
                 WasAppend = 1;
                 break;
@@ -1975,7 +2042,7 @@ int main(int argc, char**argv)
         }
     }
 exit:;
-    Cur.x = 0; Cur.y = Win.y + VidH; InsertMode = 1;
+    Cur.x = 0; Cur.y = Win.y + VidH-2; InsertMode = 1;
     if(FatMode || C64palette)
     {
         FatMode=0;

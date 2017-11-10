@@ -1,6 +1,6 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #ifdef __BORLANDC__
-unsigned short* VidMem = (unsigned short *) MK_FP(0xB800, 0x0000);
+unsigned short* VidMem = (unsigned short *) MK_FP(0xB000, 0x8000);
 #else
 unsigned short VidMem[256*256];
 #endif
@@ -122,17 +122,35 @@ void VgaSetMode(unsigned modeno)
         0xE06F8Bul,0xEB8931ul,0xFFE26Bul,0xFFFFFFul
     };
 
-    /*static const unsigned long primerpal[16] =
+    static const unsigned long primerpal[16] =
     {
         0x000000ul,0x00005Ful,0x68A141ul,0x7ABFC7ul,
         0xD75F5Ful,0x493C2Bul,0xA46422ul,0xD7D7D7ul,
         0x878787ul,0x31A2F2ul,0xA3CE27ul,0xB2DCEFul,
         0xFFAF5Ful,0xAF5FFFul,0xFFFFAFul,0xFFFFFFul
-    };*/
+    };
 
-    const unsigned long* extra_pal = c64pal;
-    if(!C64palette) extra_pal = dcpu16pal;
+    static const unsigned long replacementpal[16] =
+    {
+        0x000000ul,0x0000AAul,0x00AA00ul,0x00AAAAul,
+        0xAA0000ul,0xAA00AAul,0xAA5500ul,0xAAAAAAul,
+        0x555555ul,0x5555FFul,0x55FF55ul,0x55FFFFul,
+        0xFF5555ul,0xFF55FFul,0xFF5555ul,0xFFFFFFul
+    };
+
+    static const unsigned long replacementpal_test[16] =
+    {
+        0x000000ul,0x0000AAul,0x00AA00ul,0x00AAAAul,
+        0xAA0000ul,0xAA00AAul,0x88A8C0ul,0xAAAAAAul,
+        0x555555ul,0x5555FFul,0x55FF55ul,0x55FFFFul,
+        0xFF5555ul,0xFF55FFul,0xFFFF55ul,0xFFFFFFul
+    };
+
+    const unsigned long* extra_pal = replacementpal;
+    if(C64palette) extra_pal = c64pal;
+    if(DCPUpalette) extra_pal = dcpu16pal;
     //extra_pal = primerpal; // Special Primer version
+    //extra_pal = replacementpal_test;
 
     outportb(0x3C8, 0x20);
     for(unsigned a=0; a<16; ++a)
@@ -398,7 +416,7 @@ void VgaSetCustomMode(
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
                                  0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
                                  is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
-    if(C64palette || (DCPUpalette && font_height == 8)) //DCPU/Primer/C64 hack
+    if(1 || C64palette || (DCPUpalette && font_height == 8)) //DCPU/Primer/C64 hack
     {
         for(unsigned a=0; a<0x10; ++a) Att[a] = 0x20+a;
     }
@@ -416,7 +434,8 @@ void VgaSetCustomMode(
 
     *(unsigned char*)MK_FP(0x40,0x65) = 0x29;
     *(unsigned char*)MK_FP(0x40, 0x4A) = width;
-    *(unsigned char*)MK_FP(0x40, 0x84) = height-1;    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
+    *(unsigned char*)MK_FP(0x40, 0x84) = height-1;
+    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
 
     double clock = 28322000.0;
     if(((misc_output >> 2) & 3) == 0) clock = 25175000.0;

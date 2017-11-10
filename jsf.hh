@@ -18,21 +18,26 @@ public:
     {
         char Buf[512]={0};
         fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
-        TabType cc;
+        TabType colortable;
         char colors_sorted = 0;
         states = 0; // NOTE: THIS LEAKS MEMORY
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
-            if(Buf[0] == '=') { colors_sorted=0; ParseColorDeclaration(Buf+1, cc); }
+            if(Buf[0] == '=')
+            {
+                colors_sorted = 0;
+                ParseColorDeclaration(Buf+1, colortable);
+            }
             else if(Buf[0] == ':')
             {
                 if(!colors_sorted)
                 {
-                    sort(cc);
+                    /* Sort the color table when the first state is encountered */
+                    sort(colortable);
                     colors_sorted = 1;
                 }
-                ParseStateStart(Buf+1, cc);
+                ParseStateStart(Buf+1, colortable);
             }
             else if(Buf[0] == ' ' || Buf[0] == '\t')
                 ParseStateLine(Buf, fp);
@@ -40,7 +45,7 @@ public:
         fprintf(stdout, "Binding... "); fflush(stdout);
         BindStates();
 
-        for(unsigned n=0; n<cc.size(); ++n) free(cc[n].token);
+        for(unsigned n=0; n<colortable.size(); ++n) free(colortable[n].token);
 
         fprintf(stdout, "Done\n"); fflush(stdout);
     }
@@ -50,7 +55,8 @@ public:
         /* std::vector<unsigned char> */
         CharVecType buffer;
         int buffering;
-        int recolor, noeat;
+        int recolor, markbegin, markend;
+        int recolormark:1, noeat:1;
         unsigned char c;
         state* s;
     };
@@ -58,13 +64,14 @@ public:
     {
         state.buffer.clear();
         state.buffering = state.recolor = state.noeat = 0;
+        state.markbegin = state.markend = 0;
         state.c = '?';
         state.s = states;
     }
     struct Applier
     {
         virtual cdecl int Get(void) = 0;
-        virtual cdecl void Recolor(register unsigned n, register unsigned attr) = 0;
+        virtual cdecl void Recolor(register unsigned distance, register unsigned n, register unsigned long attr) = 0;
     };
     void Apply( ApplyState& state, Applier& app)
     {
@@ -80,16 +87,25 @@ public:
             {
                 int ch = app.Get();
                 if(ch < 0) break;
-                state.c = ch;
+                state.c       = ch;
                 state.recolor += 1;
+                ++state.markbegin;
+                ++state.markend;
             }
-            app.Recolor(state.recolor, state.s->attr);
-            state.recolor = 0;
+            if(state.recolor)
+            {
+                app.Recolor(0, state.recolor, state.s->attr);
+            }
+            if(state.recolormark)
+            {
+                app.Recolor(state.markend, state.markbegin - state.markend, state.s->attr);
+            }
 
             option *o = state.s->options[state.c];
-            state.recolor = o->recolor;
-            state.noeat   = o->noeat;
-            state.s = o->state;
+            state.recolor     = o->recolor;
+            state.recolormark = o->recolormark;
+            state.noeat       = o->noeat;
+            state.s           = o->state;
             if(o->strings)
             {
                 const char* k = (const char*) &state.buffer[0];
@@ -112,15 +128,17 @@ public:
             if(o->buffer)
                 { state.buffering = 1;
                   state.buffer.assign(&state.c, &state.c + 1); }
+            if(o->mark)    { state.markbegin = 0; }
+            if(o->markend) { state.markend   = 0; }
         }
     }
 private:
     struct option;
     struct state
     {
-        state*   next;
-        char*   name;
-        int     attr;
+        state*        next;
+        char*         name;
+        unsigned long attr;
         option* options[256];
     }* states;
     struct table_item
@@ -164,6 +182,7 @@ private:
         unsigned buffer: 1;
         unsigned strings:2; // 0=no strings, 1=strings, 2=istrings
         unsigned name_mapped:1; // whether state(1) or state_name(0) is valid
+        unsigned mark:1, markend:1, recolormark:1;
     };
     inline void ParseColorDeclaration(char* line, TabType& colortable)
     {
@@ -171,13 +190,72 @@ private:
         char* namebegin = line;
         while(*line && *line != ' ' && *line!='\t') ++line;
         char* nameend = line;
-        while(*line==' '||*line=='\t') ++line;
-        int attr = strtol(line, 0, 16);
+        char* line_end = NULL;
+        unsigned char fg256 = 0;
+        unsigned char bg256 = 0;
+        unsigned char flags = 0x00; // underline=1 dim=2 italic=4 bold=8 inverse=16 blink=32
+        for(;;)
+        {
+            while(*line==' '||*line=='\t') ++line;
+            if(!*line) break;
+            char* line_end = NULL;
+            int attr = strtol(line, &line_end, 16);
+            if(line_end >= line+2) // Two-digit hex?
+            {
+                line     = line_end;
+                fg256    = attr & 0x0F;
+                bg256    = (attr >> 4) & 0x0F;
+                continue;
+            }
+            if(strncmp(line, "fg_", 3) == 0)
+            {
+                if(line[5] >= '0' && line[5] <= '5') fg256 = 16 + strtol(line+3, &line, 6);
+                else                                 fg256 = 232 + strtol(line+3, &line, 10);
+                continue;
+            }
+            if(strncmp(line, "bg_", 3) == 0)
+            {
+                if(line[5] >= '0' && line[5] <= '5') bg256 = 16 + strtol(line+3, &line, 6);
+                else                                 bg256 = 232 + strtol(line+3, &line, 10);
+                continue;
+            }
+            /* Words: black blue cyan green red yellow magenta white
+             *        BLACK BLUE CYAN GREEN RED YELLOW MAGENTA WHITE
+             *        bg_black bg_blue bg_cyan bg_green bg_red bg_yellow bg_magenta bg_white
+             *        BG_BLACK BG_BLUE BG_CYAN BG_GREEN BG_RED BG_YELLOW BG_MAGENTA BG_WHITE
+             *        underline dim italic bold inverse blink
+             */
+            unsigned short c=0, i=0;
+            while(*line && *line != ' ' && *line != '\t') { c += 90u*(unsigned char)*line + i; i+=28; ++line; }
+            unsigned char code = ((c + 22u) / 26u) % 46u;
+            static const signed char actions[46] = { 11,30,3,1,31,18,29,23,13,36,15,25,7,2,28,-1,20,-1,24,9,16,26,-1,8,35,0,12,21,-1,5,10,17,22,33,32,34,4,14,-1,-1,6,27,-1,-1,19,37};
+            /*if(code >= 0 && code <= 45)*/ code = actions[code - 0];
+            switch(code >> 4) { case 0: fg256 = code&15; break;
+                                case 1: bg256 = code&15; break;
+                                default:flags |= 1u << (code&7); }
+        }
+        if(flags & 0x10) { unsigned tmp=fg256; fg256=bg256; bg256=tmp; flags &= ~0x10; } // inverse
+
+        unsigned short attrlo = fg256;
+        unsigned char  attrhi = flags & 0xF;
+        if(fg256 < 16 && bg256 < 16)
+        {
+            // Create a 8-bit CGA/EGA/VGA attribute
+            attrlo |= (bg256 << 4) | ((flags & 0x20) << 2) | (flags & 0x08);
+        }
+        else
+        {
+            // Create an extended attribute
+            attrhi |= 0x80u | ((fg256 & 0x80) >> 1);
+            attrlo |= (bg256 << 8u) | 0x80u;
+        }
+        unsigned long attr = attrlo | (((unsigned long)attrhi) << 16u);
+
         *nameend = '\0';
         table_item tmp;
         tmp.token = strdup(namebegin);
         if(!tmp.token) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        tmp.state = (struct state*) attr;
+        tmp.state = (struct state *) attr;
         colortable.push_back(tmp);
     }
     inline void ParseStateStart(char* line, const TabType& colortable)
@@ -192,10 +270,25 @@ private:
         if(!s) fprintf(stdout, "failed to allocate new jsf state\n");
         memset(s, 0, sizeof(*s));
         s->name = strdup(namebegin);
-        if(!s->name) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        {state* c = findstate(colortable, line);
-        if(!c) { s->attr = 0x4A; fprintf(stdout,"Unknown color: '%s'\n", line); }
-        else   s->attr = (long) c;}
+        if(!s->name)
+        {
+            fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
+            s->attr = 0x4A;
+        }
+        else
+        {
+            state* c = findstate(colortable, line);
+            // The value in the table is a pointer type, but it actually is a color code (integer).
+            if(!c)
+            {
+                fprintf(stdout,"Unknown color: '%s'\n", line);
+                s->attr = 0x4A;
+            }
+            else
+            {
+                s->attr = (long) c;
+            }
+        }
         s->next = states;
         states = s;
     }
@@ -268,22 +361,32 @@ private:
             switch(*opt_begin)
             {
                 case 'n':
-                    if(strcmp(opt_begin+1, /*"n"*/"oeat") == 0) { o->noeat = 1; break; }
+                    if(strcmp(opt_begin+1, "oeat") == 0) { o->noeat = 1; break; }
+                    goto ukw;
                 case 'b':
-                    if(strcmp(opt_begin, "buffer") == 0) { o->buffer = 1; break; }
+                    if(strcmp(opt_begin+1, "uffer") == 0) { o->buffer = 1; break; }
+                    goto ukw;
+                case 'm':
+                    if(strcmp(opt_begin+1, "arkend") == 0) { o->markend = 1; break; }
+                    if(strcmp(opt_begin+1, "ark")    == 0) { o->mark    = 1; break; }
+                    goto ukw;
                 case 's':
-                    if(strcmp(opt_begin, "strings") == 0) { o->strings = 1; break; }
+                    if(strcmp(opt_begin+1, "trings") == 0) { o->strings = 1; break; }
+                    goto ukw;
                 case 'i':
-                    if(strcmp(opt_begin, "istrings") == 0) { o->strings = 2; break; }
+                    if(strcmp(opt_begin+1, /*i*/"strings") == 0) { o->strings = 2; break; }
+                    goto ukw;
                 case 'r':
-                    if(strncmp(opt_begin, "recolor=", 8) == 0)
+                    if(strcmp(opt_begin+1, "ecolormark") == 0) { o->recolormark = 1; break; }
+                    if(strncmp(opt_begin+1, "ecolor=", 7) == 0)
                     {
                         int r = atoi(opt_begin+8);
                         if(r < 0) r = -r;
                         o->recolor = r;
                         break;
                     }
-                default:
+                    goto ukw;
+                default: ukw:
                     fprintf(stdout,"Unknown keyword '%s' in '%s'\n", opt_begin, namebegin);
             }
         }
