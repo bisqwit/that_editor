@@ -89,7 +89,7 @@
 =Preproc_charContent	  fg_525 dim underline
 
 # Comments within preprocessor statements
-=PreprocComment	          fg_412 dim underline
+=PreprocComment	          fg_412 dim underline italic
 # Unknown preprocessor words
 =PreprocUnknown	underline fg_500 bg_543
 
@@ -110,7 +110,7 @@
 =OpenACC_space  underline fg_132
 
 # Comments
-=Comment	fg_411
+=Comment	fg_411 italic
 
 # Most operators () ? ~ . / : * / + - < >
 =Special	fg_033
@@ -121,6 +121,7 @@
 =BisonDelim	fg_430
 =BisonKw	fg_442 italic
 =BisonComment	fg_411
+=BisonDollar	fg_443 dim
 =Re2cDelim	fg_430
 =Re2cEscape	   fg_202
 =Re2cRangeDelim	fg_024
@@ -153,8 +154,8 @@
 =WRawString	   fg_242
 =WRawStringContent fg_353
 # Char constants
-=Char		fg_313
-=CharContent	fg_525
+=Char		fg_021
+=CharContent	fg_044
 =WChar		fg_331
 =WCharContent	fg_552
 
@@ -173,10 +174,13 @@
 # All other identifiers
 =Identifier	fg_333
 
+=BisonIdent	fg_555 dim italic
+
 =Hardcoded	fg_000
 
 # All unrecognized content
 =Mystery	fg_500 bg_542
+#=Mystery	bg_000 fg_033
 =TrailingSpace  bg_002
 
 ########################
@@ -677,7 +681,8 @@ done
 	"."		period		recolor=-1
 	"\""		stringbegin	recolor=-1
 	"'"		charbegin	recolor=-1
-	"a-z$A-Z_"	ident		recolor=-1 buffer
+	"$"		bison_ident	recolor=-1
+	"a-zA-Z_"	ident		recolor=-1 buffer
 	"LU"		maybe_wide      recolor=-1 buffer
 	"u"		maybe_unicode	recolor=-1 buffer
 	"R"		maybe_rawstring	recolor=-1 buffer
@@ -781,7 +786,9 @@ done
 	" \n\t"	bison_kw
 	"a-z"	perc_ident recolor=-1 buffer
 	"{"	bison_delim recolor=-1
-
+:bison_ident	BisonDollar
+	*	idle noeat
+	"$0-9"	bison_ident
 :maybe_bison_end	Special2
 	*	idle	noeat
 	"/"	maybe_bison_comment	markend
@@ -1063,6 +1070,45 @@ done
 # Special identifiers
 :ident Identifier
 	*		idle noeat strings
+	"END" bisonident
+	"RETURN" bisonident
+	"WHILE" bisonident
+	"OR" bisonident
+	"AND" bisonident
+	"IF" bisonident
+	"VAR" bisonident
+	"EQ" bisonident
+	"NE" bisonident
+	"PP" bisonident
+	"MM" bisonident
+	"PL_EQ" bisonident
+	"MI_EQ" bisonident
+	"IDENTIFIER"	bisonident
+	"NUMCONST"	bisonident
+	"STRINGCONST"	bisonident
+	"error"		bisonident2
+	"program"	bisonident
+	"functions"	bisonident
+	"paramdecl"	bisonident
+	"paramdecls"	bisonident
+	"identifier1"	bisonident
+	"colon1"	bisonident
+	"semicolon1"	bisonident
+	"cl_brace1"	bisonident
+	"cl_bracket1"	bisonident
+	"cl_parens1"	bisonident
+	"statement1"	bisonident
+	"statement"	bisonident
+	"exprs1"	bisonident
+	"expr1"		bisonident
+	"p_expr1"	bisonident
+	"com_stmt"	bisonident
+	"var_defs"	bisonident
+	"var_def1"	bisonident
+	"exprs"		bisonident
+	"c_expr1"	bisonident
+	"expr"		bisonident
+	
 	"auto"		type
 	"bool"          type   #c++
 	"char"		type
@@ -1309,6 +1355,11 @@ done
 	*	hello
 	")"	idle
 
+
+:bisonident BisonIdent
+	*	idle noeat
+:bisonident2 BisonKw
+	*	idle noeat
 
 :type Type
 	*	idle noeat

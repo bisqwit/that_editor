@@ -1,5 +1,6 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include <string.h>
+#include "vec_c.hh"
 
 class JSF
 {
@@ -17,7 +18,7 @@ public:
     void Parse(FILE* fp)
     {
         char Buf[512]={0};
-        fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
+        //fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
         TabType colortable;
         char colors_sorted = 0;
         states = 0; // NOTE: THIS LEAKS MEMORY
@@ -42,12 +43,12 @@ public:
             else if(Buf[0] == ' ' || Buf[0] == '\t')
                 ParseStateLine(Buf, fp);
         }
-        fprintf(stdout, "Binding... "); fflush(stdout);
+        //fprintf(stdout, "Binding... "); fflush(stdout);
         BindStates();
 
         for(unsigned n=0; n<colortable.size(); ++n) free(colortable[n].token);
 
-        fprintf(stdout, "Done\n"); fflush(stdout);
+        //fprintf(stdout, "Done\n"); fflush(stdout);
     }
     struct state;
     struct ApplyState
@@ -98,7 +99,8 @@ public:
             }
             if(state.recolormark)
             {
-                app.Recolor(state.markend, state.markbegin - state.markend, state.s->attr);
+                // markbegin & markend say how many characters AGO it was marked
+                app.Recolor(state.markend+1, state.markbegin - state.markend, state.s->attr);
             }
 
             option *o = state.s->options[state.c];
@@ -161,13 +163,17 @@ private:
         }
     };
     /* std::vector<table_item> without STL, for Borland C++ */
+    #ifdef __GNUC__
+    using TabType = std::vector<table_item>;
+    #else
     #define UsePlacementNew
     #define T       table_item
     #define VecType TabType
     #include "vecbase.hh"
-    #undef TabType
+    #undef VecType
     #undef T
     #undef UsePlacementNew
+    #endif
 
     struct option
     {
@@ -190,7 +196,6 @@ private:
         char* namebegin = line;
         while(*line && *line != ' ' && *line!='\t') ++line;
         char* nameend = line;
-        char* line_end = NULL;
         unsigned char fg256 = 0;
         unsigned char bg256 = 0;
         unsigned char flags = 0x00; // underline=1 dim=2 italic=4 bold=8 inverse=16 blink=32
@@ -228,7 +233,7 @@ private:
             unsigned short c=0, i=0;
             while(*line && *line != ' ' && *line != '\t') { c += 90u*(unsigned char)*line + i; i+=28; ++line; }
             unsigned char code = ((c + 22u) / 26u) % 46u;
-            static const signed char actions[46] = { 11,30,3,1,31,18,29,23,13,36,15,25,7,2,28,-1,20,-1,24,9,16,26,-1,8,35,0,12,21,-1,5,10,17,22,33,32,34,4,14,-1,-1,6,27,-1,-1,19,37};
+            static const signed char actions[46] = { 10,30,2,1,31,19,29,23,13,36,15,25,7,3,28,-1,20,-1,24,9,16,27,-1,8,35,0,12,21,-1,5,11,17,22,33,32,34,4,14,-1,-1,6,26,-1,-1,18,37};
             /*if(code >= 0 && code <= 45)*/ code = actions[code - 0];
             switch(code >> 4) { case 0: fg256 = code&15; break;
                                 case 1: bg256 = code&15; break;
@@ -414,10 +419,14 @@ private:
                 while(*line != '\0') ++line;
                 /*unsigned char* value_end   = (unsigned char*) line;
                 *value_end++ = '\0';*/
-                table_item item;
-                item.token      = key_begin;
-                item.state_name = value_begin;
-                o->stringtable.push_back(item);
+                if(*key_begin && *value_begin)
+                {
+                    table_item item;
+                    item.token      = key_begin;
+                    item.state_name = value_begin;
+                    //fprintf(stdout, "String-table push '%s' '%s'\n", key_begin,value_begin);
+                    o->stringtable.push_back(item);
+                }
             }
             sort(o->stringtable);
         }
@@ -485,6 +494,33 @@ private:
     }
 
     // Converted state-names into pointers to state structures for fast access
+    void Remap(option*& o, TabType& state_cache, unsigned a, const char* statename)
+    {
+        if( ! o->name_mapped)
+        {
+            char* name = o->state_name;
+            o->state = findstate( state_cache, name );
+            if(!o->state)
+            {
+                fprintf(stdout, "Failed to find state called '%s' for index %u/256 in '%s'\n", name, a, statename);
+            }
+            o->name_mapped = 1;
+            for(TabType::iterator e = o->stringtable.end(),
+                t = o->stringtable.begin();
+                t != e;
+                ++t)
+            {
+                char* name2 = t->state_name;
+                t->state = findstate( state_cache, name2 );
+                if(!t->state)
+                {
+                    fprintf(stdout, "Failed to find state called '%s' for string table in target '%s' for '%s'\n", name2, name, statename);
+                }
+                // free(name2); - was not separately allocated
+            }
+            free(name);
+        }
+    }
     void BindStates()
     {
         TabType state_cache;
@@ -502,35 +538,34 @@ private:
         {
             for(unsigned a=0; a<256; ++a)
             {
-                option* o = states->options[a];
+            //tail:;
+                option*& o = states->options[a];
                 if(!o)
                 {
                     fprintf(stdout, "In state '%s', character state %u/256 not specified\n", states->name, a);
                     continue;
                 }
-                if( ! o->name_mapped)
+                Remap(o, state_cache, a, states->name);
+                while(o->noeat && o->recolor <= 1 && !o->buffer && !o->strings && !o->mark && !o->markend && !o->recolormark)
                 {
-                    char* name = o->state_name;
-                    o->state = findstate( state_cache, name );
-                    if(!o->state)
+                    unsigned long orig_attr = states->attr;
+                    unsigned long new_attr  = o->state->attr;
+                    int had_recolor         = o->recolor > 0;
+
+                    o = o->state->options[a];
+                    Remap(o, state_cache, a, o->state->name);
+
+                    if(o->state->options[a]->recolor < 1 && (had_recolor || new_attr != orig_attr))
                     {
-                        fprintf(stdout, "Failed to find state called '%s' for index %u/256 in '%s'\n", name, a, states->name);
+                        o->state->options[a]->recolor = 1;
                     }
-                    free(name);
-                    o->name_mapped = 1;
-                    for(TabType::iterator e = o->stringtable.end(),
-                        t = o->stringtable.begin();
-                        t != e;
-                        ++t)
-                    {
-                        name = t->state_name;
-                        t->state = findstate( state_cache, name );
-                        // free(name); - was not separately allocated
-            }   }   }
+                }
+            }
             if(!states->next) break;
             // Get the first-inserted state (last in chain) as starting-point.
             states = states->next;
-    }   }
+        }
+    }
 
     static int TableItemCompareForSort(const void * a, const void * b)
     {

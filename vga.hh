@@ -5,6 +5,8 @@ unsigned short* VidMem = (unsigned short *) MK_FP(0xB000, 0x8000);
 unsigned short VidMem[256*256];
 #endif
 
+#define DOSBOX_HICOLOR_OFFSET (-0x8000l)
+
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
 double VidFPS = 60.0;
 const unsigned char* VgaFont = 0;
@@ -416,7 +418,7 @@ void VgaSetCustomMode(
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
                                  0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
                                  is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
-    if(1 || C64palette || (DCPUpalette && font_height == 8)) //DCPU/Primer/C64 hack
+    if(C64palette || (DCPUpalette && font_height == 8)) //DCPU/Primer/C64 hack
     {
         for(unsigned a=0; a<0x10; ++a) Att[a] = 0x20+a;
     }

@@ -1,6 +1,6 @@
 @echo off
 rescan
-cycles 80000
+cycles 180000
 REM PATH=d:\editor\bin;%PATH%
 
 rem bcc -S -3 -f287 -w -w-sig -w-inl -h -ff -B -P -d -a -O -Oemvlpbig -Z -mc -I../include -L../lib main.cc

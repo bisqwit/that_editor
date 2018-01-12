@@ -163,7 +163,7 @@ static unsigned OverlayMarioByte(
 }
 
 void MarioTranslate(
-    unsigned short* model,
+    unsigned long*  model,
     unsigned short* target,
     unsigned width)
 {
@@ -192,7 +192,9 @@ void MarioTranslate(
     unsigned char RevisedFontData[ 6 * 32 ];
 
     const unsigned MarioColor = 0x0800;
+
     const unsigned base = FatMode ? 0x80 : 0xC0;
+
     const unsigned short chartable[6] =
         { base + 0x0 + MarioColor,
           base + 0x3 + MarioColor,
@@ -201,6 +203,7 @@ void MarioTranslate(
           base + 0x9 + MarioColor,
           base + 0xD + MarioColor
         };
+
     unsigned fontdatasize  = 0;
     unsigned numchars      = 0;
     unsigned spritewide = 16;
@@ -213,21 +216,35 @@ void MarioTranslate(
         if(basex < 0) continue;
 
         int offset = basex - mariox;
-        unsigned short ch = model[basex >> 3];
-        if( (ch & 0xFF) == 0xDC )
-            ch = (ch & 0xFF00u) | 0x20;
 
-        const unsigned char* SourceFontPtr = VgaFont + ((ch & 0xFF) * VidCellHeight);
+        unsigned long word = model[basex >> 3];
+        unsigned char ch = word;
+
+        if(ch == 0xDC || (ch >= 0xB0 && ch <= 0xB2))
+            ch = 0x20;
+
+        const unsigned char* SourceFontPtr = VgaFont + (ch * VidCellHeight);
 
         for(unsigned y=0; y<VidCellHeight; ++y)
         {
             RevisedFontData[fontdatasize++] =
                 OverlayMarioByte(marioframe,y,mariox, SourceFontPtr[y], offset);
         }
-        model[basex >> 3] = (ch & 0xF000u) | chartable[numchars++];
+        if(word & 0x80000000ul)
+            model[basex >> 3] = (word & 0xBFFF8000ul) | chartable[numchars++];
+        else
+            model[basex >> 3] = (word & 0x3FFF0000ul) | chartable[numchars++];
     }
 
-    memcpy(target, model, room_wide/4);
+    for(unsigned p=room_wide/8; p-- > 0u; )
+    {
+        unsigned long v = *model;
+        *target = v;
+        target[(DOSBOX_HICOLOR_OFFSET/2)] = v >> 16;
+        ++target;
+        ++model;
+    }
+    //memcpy(target, model, room_wide/4);
 #ifdef __BORLANDC__
     if(numchars > 0)
     {

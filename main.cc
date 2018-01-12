@@ -26,9 +26,6 @@ static inline int ispunct_(unsigned char c)
     return !isspace(c) && !isalnum_(c);
 }
 
-#define DOSBOX_HICOLOR_OFFSET (-0x8000l)
-
-
 // Return just the filename part of pathfilename
 const char* fnpart(const char* fn)
 {
@@ -219,30 +216,46 @@ struct ApplyEngine: public JSF::Applier
         }
     virtual cdecl int Get(void)
     {
-        FlushColor();
         if(y >= EditLines.size() || EditLines[y].empty())
         {
             finished = 1;
+            FlushColor();
             return -1;
         }
         int ret = EditLines[y][x] & 0xFF;
         if(ret == '\n')
         {
-            if(kbhit()) return -1;
+            if(kbhit()) { return -1; }
             ++nlines;
-            if(nlines >= VidH) { nlines=0; return -1; }
-            if(nlinestotal > Win.y + VidH && nlines >= 4)
-                { nlines=0; return -1; }
+            if((nlines >= VidH)
+            || (nlinestotal > Win.y + VidH && nlines >= 4))
+                { nlines=0; FlushColor(); return -1; }
             ++nlinestotal;
         }
+        pending_recolor_distance += 1;
         ++x;
         if(x == EditLines[y].size()) { x=0; ++y; }
         //fprintf(stdout, "Gets '%c'\n", ret);
         return ret;
     }
+    /* attr     = Attribute to set
+     * n        = Number of last characters to apply that attribute for
+     * distance = Extra number of characters to count and skip
+     */
     virtual cdecl void Recolor(register unsigned distance, register unsigned n, register unsigned long attr)
     {
-        if(n < pending_recolor) FlushColor();
+        /* Flush the previous req, unless this new req is a super-set of the previous request */
+        if(pending_recolor > 0)
+        {
+            register unsigned old_apply_begin = pending_recolor + pending_recolor_distance;
+            register unsigned old_apply_end   = pending_recolor_distance;
+            register unsigned new_apply_begin = distance + n;
+            register unsigned new_apply_end   = distance;
+            if(new_apply_begin < old_apply_begin || new_apply_end > old_apply_end)
+            {
+                FlushColor();
+            }
+        }
         pending_recolor_distance = distance;
         pending_recolor          = n;
         pending_attr             = attr << 8;
@@ -251,20 +264,24 @@ private:
     void FlushColor()
     {
         register unsigned dist      = pending_recolor_distance;
-        register unsigned n         = pending_recolor + dist;
+        register unsigned n         = pending_recolor;
         register unsigned long attr = pending_attr;
-        //fprintf(stdout, "Recolors %u as %02X\n", n, attr);
-        size_t px=x, py=y;
-        for(; n > 0; --n)
+        if(n > 0)
         {
-            if(px == 0) { if(!py) break; --py; px = EditLines[py].size()-1; }
-            else --px;
-            if(dist > 0)
-                --dist;
-            else
+            //fprintf(stdout, "Recolors %u as %02X\n", n, attr);
+            size_t px=x, py=y;
+            LongVecType* line = &EditLines[py];
+            for(n += dist; n > 0; --n)
             {
-                unsigned long& w = EditLines[py][px];
-                w = (w & 0xFF) | attr;
+                if(px == 0) { if(!py) break; line = &EditLines[--py]; px = line->size()-1; }
+                else --px;
+                if(dist > 0)
+                    --dist;
+                else
+                {
+                    unsigned long& w = (*line)[px];
+                    w = (w & 0xFF) | attr;
+                }
             }
         }
         pending_recolor          = 0;
@@ -394,11 +411,82 @@ static void Cycles_Check()
     Cycles_Trend = 0;
 }
 
+struct ColorSlideCache
+{
+    enum { MaxWidth = 192 };
+    const unsigned char*  const colors;
+    const unsigned short* const color_positions;
+    const unsigned              color_length;
+    unsigned cached_width;
+    unsigned short cache_color[MaxWidth];
+    unsigned char cache_char[MaxWidth];
+
+public:
+    ColorSlideCache(const unsigned char* c, const unsigned short* p, unsigned l)
+        : colors(c), color_positions(p), color_length(l), cached_width(0) {}
+
+    void SetWidth(unsigned w)
+    {
+        if(w == cached_width) return;
+        cached_width = w;
+        unsigned char first=0;
+        { memset(cache_char, 0, sizeof(cache_char)); memset(cache_color, 0, sizeof(cache_color)); }
+        for(unsigned x=0; x<w && x<MaxWidth; ++x)
+        {
+            unsigned short cur_position = (((unsigned long)x) << 16u) / w;
+            while(first < color_length && color_positions[first] <= cur_position) ++first;
+            unsigned long  next_position=0;
+            unsigned char  next_value=0;
+            if(first < color_length)
+                { next_position = color_positions[first]; next_value = colors[first]; }
+            else
+                { next_position = 10000ul; next_value = colors[color_length-1]; }
+
+            unsigned short prev_position=0;
+            unsigned char  prev_value   =next_value;
+            if(first > 0)
+                { prev_position = color_positions[first-1]; prev_value = colors[first-1]; }
+
+            float position = (cur_position - prev_position) / float(next_position - prev_position );
+            //static const unsigned char chars[4] = { 0x20, 0xB0, 0xB1, 0xB2 };
+            //register unsigned char ch = chars[unsigned(position*4)];
+            static const unsigned char chars[2] = { 0x20, 0xDC };
+            register unsigned char ch = chars[unsigned(position*2)];
+            //unsigned char ch = 'A';
+            if(prev_value == next_value || ch == 0x20) { ch = 0x20; next_value = 0; }
+            cache_char[x] = ch;
+            cache_color[x] = prev_value | (next_value << 8u);
+            //cache[x] = 0x80008741ul;
+        }
+    }
+    inline void Get(unsigned x, unsigned char& ch, unsigned char& c1, unsigned char& c2) const
+    {
+        register unsigned short tmp = cache_color[x];
+        ch = cache_char[x];
+        c1 = tmp;
+        c2 = tmp >> 8u;
+    }
+};
+/*
+        float xscale = x * (sizeof(slide)-1) / float(StatusWidth-1);
+        unsigned c1 = slide[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
+        unsigned c2 = slide[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
+        unsigned char ch = 0xDC;
+*/
+
+static const unsigned char  slide1_colors[21] = {6,73,109,248,7,7,7,7,7,248,109,73,6,6,6,36,35,2,2,28,22};
+static const unsigned short slide1_positions[21] = {0u,1401u,3711u,6302u,7072u,8192u,16384u,24576u,32768u,33889u,34659u,37250u,39560u,40960u,49152u,50903u,53634u,55944u,57344u,59937u,63981u};
+static const unsigned char  slide2_colors[35] = {248,7,249,250,251,252,188,253,254,255,15,230,229,228,227,11,227,185,186,185,179,143,142,136,100,94,58,239,238,8,236,235,234,233,0};
+static const unsigned short slide2_positions[35] = {0u,440u,1247u,2126u,3006u,3886u,4839u,5938u,6965u,8064u,9750u,12590u,15573u,18029u,19784u,21100u,24890u,27163u,30262u,35051u,35694u,38054u,40431u,41156u,46212u,46523u,50413u,52303u,53249u,54194u,56294u,58815u,61335u,63856u,64696u};
+
+static ColorSlideCache slide1(slide1_colors, slide1_positions, sizeof(slide1_colors));
+static ColorSlideCache slide2(slide2_colors, slide2_positions, sizeof(slide2_colors));
+
 void VisRenderStatus()
 {
     unsigned StatusWidth = VidW*columns;
 
-    WordVecType Hdr(StatusWidth*2);
+    LongVecType Hdr(StatusWidth*2);
     unsigned short* Stat = GetVidMem(0, (VidH-1) / columns, 1);
 
     time_t t = time(0);
@@ -423,7 +511,7 @@ void VisRenderStatus()
     char Part3[16]; sprintf(Part3, "%02d:%02d:%02d",
         tm->tm_hour,tm->tm_min,tm->tm_sec);
     char Part4[32]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed);
-    static const char Part5[] = "+22.5øC"; // temperature degC degrees celsius
+    static const char Part5[] = "-4.2øC"; // temperature degC degrees celsius
 
     // Because running CPUinfo() interferes with our PIT clock,
     // only run the CPU speed check maybe twice in a second.
@@ -505,63 +593,76 @@ void VisRenderStatus()
     unsigned x1b = x1a + strlen(Buf1);
     unsigned x2b = x2a + strlen(Buf2);
 
-    static const unsigned char slide[] = {3,7,7,7,7,3,3,2};
-    static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
-    #define f(v) v / 16.0f
-    static const float Bayer[16] = { f(0),f(8),f(4),f(12),f(2),f(10),f(6),f(14),
-                                     f(3),f(11),f(7),f(15),f(1),f(9),f(5),f(13) };
-    #undef f
-    {for(unsigned x=0; x<StatusWidth; ++x)
+    {slide1.SetWidth(StatusWidth);
+    for(unsigned x=0; x<StatusWidth; ++x)
     {
-        float xscale = x * (sizeof(slide)-1) / float(StatusWidth-1);
-        unsigned c1 = slide[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
-        unsigned c2 = slide[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
-        unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
-        if(C64palette) color = 0x7020;
+        unsigned char ch, c1, c2; slide1.Get(x, ch,c1,c2);
+
+        if(C64palette) { c1=7; c2=0; ch = 0x20; }
+        unsigned char c = 0x20;
 
         if(x == 0 && WaitingCtrl)
-            color = (color&0xF000) | '^';
+            c = '^';
         else if(x == 1 && WaitingCtrl)
-            color = (color&0xF000) | WaitingCtrl;
+            c = WaitingCtrl;
         else if(x == 3 && InsertMode)
-            color = (color&0xF000) | 'I';
+            c = 'I';
         else if(x == 4 && UnsavedChanges)
-            color = (color&0xF000) | '*';
+            c = '*';
         else if(x >= x1a && x < x1b && Buf1[x-x1a] != ' ')
-            color = (color&0xF000) | (unsigned char)Buf1[x-x1a];
+            c = (unsigned char)Buf1[x-x1a];
         else if(x >= x2a && x < x2b && Buf2[x-x2a] != ' ')
-            color = (color&0xF000) | (unsigned char)Buf2[x-x2a];
+            c = (unsigned char)Buf2[x-x2a];
+
+        if(c != 0x20)
+        {
+            ch = c; c2 = 0;
+            //if(c1 == c2) c2 = 7;
+        }
+        /*if(!C64palette && c != 0x20)
+            switch(c2)
+            {
+                case 8: c1 = 7; break;
+                case 0: c1 = 8; break;
+            }*/
+
+        unsigned short colorlo = ch | 0x8000u | (c2 << 8u);
+        unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
+
         if(FatMode)
-            { Hdr[x+x] = color; Hdr[x+x+1] = color|0x80; }
+            { Hdr[x+x] = colorlo; Hdr[x+x+1] = colorlo|0x80; }
         else
-            Hdr[x] = color;
+            Hdr[x] = colorlo | (((unsigned long)colorhi) << 16u);
     }}
     if(StatusLine[0])
-        {for(unsigned p=0,x=0; x<StatusWidth; ++x)
+        {slide2.SetWidth(StatusWidth);
+        for(unsigned p=0,x=0; x<StatusWidth; ++x)
         {
-            float xscale = x * (sizeof(slide2)-1) / float(StatusWidth-1);
-            unsigned c1 = slide2[(unsigned)( xscale + Bayer[0*8 + (x&7)] )];
-            unsigned c2 = slide2[(unsigned)( xscale + Bayer[1*8 + (x&7)] )];
-            unsigned color = (c1 << 12u) | (c2 << 8u) | 0xDC;
-            if(C64palette) color = 0x7020;
+            unsigned char ch, c1, c2; slide2.Get(x, ch,c1,c2);
+            if(C64palette) { c1=7; c2=0; ch = 0x20; }
+
             unsigned char c = StatusLine[p]; if(!c) c = 0x20;
-            if(c != 0x20 || (((color >> 12)) == ((color >> 8)&0xF)))
+            if(c != 0x20)
             {
-                color = (color & 0xF000u) | c;
-                if((color >> 12) == ((color >> 8)&0xF)) color |= 0x700;
+                ch = c; c2 = 0;
+                //if(c1 == c2) c2 = 7;
             }
-            if(!C64palette && c != 0x20)
-                switch(color>>12)
+            /*if(!C64palette && c != 0x20)
+                switch(c2)
                 {
-                    case 8: color |= 0x700; break;
-                    case 0: color |= 0x800; break;
-                }
+                    case 8: c1 = 7; break;
+                    case 0: c1 = 8; break;
+                }*/
+
+            unsigned short colorlo = ch | 0x8000u | (c2 << 8u);
+            unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
+
             if(FatMode)
-                { Stat[x+x] = color; Stat[x+x+1] = color|0x80; }
+                { Stat[x+x] = colorlo; Stat[x+x+1] = colorlo|0x80; }
             else
             {
-                Stat[x] = color;
-                Stat[x+(DOSBOX_HICOLOR_OFFSET/2)] = 0;
+                Stat[x] = colorlo;
+                Stat[x+(DOSBOX_HICOLOR_OFFSET/2)] = colorhi;
             }
             if(StatusLine[p]) ++p;
         }}
@@ -609,9 +710,21 @@ void VisRender()
                 &&  ((ly == BlockEnd.y && lx-1 < BlockEnd.x)
                   || ly < BlockEnd.y) )
                 {
-                    attr = (attr & 0xFFu)
-                         | ((attr >> 4u) & 0xF00u)
-                         | ((attr << 4u) & 0xF000u);
+                    if((attr & 0x80008000ul) == 0x80008000ul)
+                    {
+                        unsigned char bg = (attr >> 16) & 0xFF;
+                        unsigned char fg = ((attr >> 8) & 0x7F) | ((attr >> 23) & 0x80);
+                        attr &= 0xBF0080FFul;
+                        attr |= ((unsigned long)fg) << 16;
+                        attr |= ((unsigned long)bg) << 8;
+                        if(bg & 0x80) attr |= 0x40000000ul;
+                    }
+                    else
+                    {
+                        attr = (attr & 0xFF0000FFul)
+                             | ((attr >> 4u) & 0xF00u)
+                             | ((attr << 4u) & 0xF000u);
+                    }
                 }
                 if(DispUcase && islower(attr & 0xFF))
                     attr &= ~0x20ul;
