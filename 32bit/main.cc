@@ -470,6 +470,8 @@ void Cycles_Check()
         _asm { db 0xFE,0x38,0x06,0x00 }
         #elif defined(__DJGPP__)
 
+        /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
+         * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
         __asm__ volatile("movl %0, %%tr2" : : "a"(CYCLES_Current));
 
         #endif
@@ -940,6 +942,8 @@ void WaitInput(int may_redraw = 1)
                 __asm__ volatile("hlt");
                 // dpmi_yield is not used, because it's not implemented in dosbox
                 // Instead, we issue "hlt" and patch DOSBox to not produce an exception
+                /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
+                 * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
               #endif
             }
         #endif
