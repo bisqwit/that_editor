@@ -71,15 +71,17 @@ byte, but in commits
 and 
 [05eaf3c7](https://github.com/bisqwit/that_editor/commit/05eaf3c7bb614ee0803763a4acebd3b83ecf9d27)
 I added support
-for xterm-256color compatible extended color attributes. This requires
+for xterm-256color compatible extended color attributes,
+which incidentally doubled the memory usage of the editor.
+This requires
 [special support](https://github.com/bisqwit/compiler_series/blob/master/ep1/dostools/dosbox/0016-Add-support-for-xterm-256color.patch) from DOSBox.
 
 ### Syntax highlighting
 
 Syntax highlighting operates on a state machine that is modelled after
 the syntax highlighting engine in Joe. In fact, this editor uses the exact
-same JSF files to configure the syntax highlighting. You can learn more
-about the JSF system in the JSF files that come with Joe.
+same JSF files to configure the syntax highlighting as Joe does.
+You can learn more about the JSF system in the JSF files that come with Joe.
 
 Syntax highlighting is applied in real time using a virtual callback
 that supports two options: Get next character,
@@ -97,3 +99,51 @@ treats those characters as bitmaps, adds Mario into them,
 and then installs the modified characters in the font and replaces
 the character indexes on screen in that spot to refer to the modified
 characters.
+
+## Compilation
+
+### 16-bit DOS
+
+To build for 16-bit DOS, launch DOSBox and use `make.bat`. You may need to edit the paths in `make.bat` first.
+
+This requires the following programs to exist:
+* Borland C++ 4.52 compiler (bcc.exe) has been tested to work. Version 3.1 may work, but you may need to delete some commandline options.
+* Turbo Assembler, any version though 5.0 has been tested to work. TASM 3.1 and 4.1 seem to work, but you have to delete the output files first.
+* Turbo Link, any version, though 7.0 has been tested to work.
+
+### 32-bit DOS (DPMI)
+
+To build for 32-bit DOS, open a terminal in Linux, go to the `32bit` subdirectory and run `make`.
+You will need the DJGPP installed, and you need `make` of course too.
+
+To install DJGPP on Debian, download from a DJGPP mirror,
+such as ftp://ftp.fu-berlin.de/pc/languages/djgpp/rpms/,
+the following packages: `djcrx-(someversion).rpm`,
+`djcross-binutils-(someversion).rpm`,
+`djcross-gcc-(someversion).rpm`, and
+`djcross-gcc-c++-(someversion).rpm`.
+
+And then run `fakeroot alien dj*.rpm`  and `dpkg -i dj*.deb`.
+
+Example (in a format tiny enough to fit in a 280 character tweet):
+
+    sudo apt-get install fakeroot alien wget make
+    wget http://mirrors.fe.up.pt/pub/djgpp/rpms/djcr{oss-{binutils-2.29.1,gcc-7.2.0/x86_64/djcross-gcc-{,{c++,info,tools}-}7.2.0}-1ap,x-2.05-5}.x86_64.rpm
+    fakeroot alien dj*.rpm
+    sudo dpkg -i dj*.deb
+
+You can get HDPMI32 from https://sourceforge.net/projects/hx-dos/files/ ,
+such as: https://sourceforge.net/projects/hx-dos/files/2.17/hxrt217.7z/download
+
+## Features
+
+Paper-thin set pieces.
+It’s basically Hollywood.
+
+Well, to be honest the editor does support four simultaneous cursors,
+full undo+redo…
+But testing and development is directed by my video productions.
+After all I only ever use this editor for the videos.
+And in those videos, I only need very basic set of features.
+Look at the `doc/` directory for details.
+
