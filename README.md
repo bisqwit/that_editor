@@ -2,6 +2,8 @@
 
 It’s *that* editor.
 
+![Snapshot](pic/snap.png)
+
 Some more information at: https://github.com/bisqwit/compiler_series/tree/master/ep1/dostools
 
 ## What
@@ -32,7 +34,8 @@ and I couldn’t bother to study, so I wrote the editor entirely from scratch.
 I wrote the editor for *16-bit* DOS because I thought there would
 be significant troubles trying to mix 16-bit interrupt callbacks with
 32-bit protected-mode code. Also I don’t think I knew back then,
-that DJGPP has been as modernized as it indeed has. So I used Borland C++ 3.1.
+that DJGPP has been as modernized as it indeed has. If it even was.
+So I used Borland C++ 3.1.
 
 This compiler by Borland was created before C++ was standardized, and it required
 me to make many sacrifices about style / sanity in the source code.
