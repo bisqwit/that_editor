@@ -6,6 +6,11 @@
 
 #include "vec_s.hh"
 
+#ifdef __GNUC__
+ #include <vector>
+ using WordPtrVecType = std::vector<std::vector<unsigned short>>;
+#else
+
 #define UsePlacementNew
 
 #define T       WordVecType
@@ -17,5 +22,7 @@
 #undef T
 
 #undef UsePlacementNew
+
+#endif
 
 #endif

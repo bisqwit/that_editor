@@ -5,7 +5,13 @@
 #include <time.h>
 #include <ctype.h>
 
-#include <process.h> // For Cycles adjust on DOSBOX
+#ifdef __BORLANDC__
+# include <process.h> // For Cycles adjust on DOSBOX
+#endif
+#ifdef __DJGPP__
+# include <dos.h>
+# include <dpmi.h>
+#endif
 
 #define CTRL(c) ((c) & 0x1F)
 
@@ -67,7 +73,40 @@ static int MyGetch()
 #define getch MyGetch
 
 #else
-# define cdecl
+
+#define cdecl
+#define register
+
+#ifdef __DJGPP__
+
+static unsigned char KbStatus = 0;
+static int MyKbhit()
+{
+    if(!KbStatus)
+    {
+        REGS r{};
+        r.h.ah = 1;
+        int86(0x16, &r, &r);
+        return (r.w.flags & 0x40) ? 0 : 1;
+    }
+    return 1;
+}
+static int MyGetch()
+{
+    unsigned char s = KbStatus;
+    if(s) { KbStatus=0; return s; }
+    REGS r{};
+    r.w.ax = 0;
+    int86(0x16, &r, &r);
+    if(r.h.al) return r.h.al;
+    KbStatus = r.h.ah;
+    return 0;
+}
+#define kbhit MyKbhit
+#define getch MyGetch
+
+#else // not borlandc, djgpp
+
 static unsigned      kbhitptr   = 0;
 static unsigned char kbhitbuf[] =
 {
@@ -81,6 +120,9 @@ static unsigned char kbhitbuf[] =
 # define kbhit() (kbhitptr < sizeof(kbhitbuf) && rand()%100 == 0)
 # define getch() kbhitbuf[kbhitptr++]
 # define strnicmp strncasecmp
+
+#endif
+
 #endif
 
 #include "vec_c.hh"
@@ -309,6 +351,8 @@ void VisSoftCursor(int mode)
     unsigned char cux=0, cuy=0;
 #ifdef __BORLANDC__
     _asm { mov ah, 3; mov bh, 0; int 0x10; mov cux, dl; mov cuy, dh; xchg cx,cx }
+#elif defined(__DJGPP__)
+    { REGS r{}; r.h.ah = 3; r.h.bh = 0; int86(0x10, &r, &r); cux = r.h.dl; cuy = r.h.dh; }
 #endif
     unsigned short* now_location = GetVidMem(cux,cuy); //VidMem + cux + cuy * unsigned(VidW + C64palette*4);
 
@@ -332,6 +376,9 @@ void VisSoftCursor(int mode)
     {
         case 60:
             CursorCounter=0;
+            #ifdef __GNUC__
+            [[fallthrough]];
+            #endif
         case 0:
             *cursor_location = ((evacuation&0xF00)<<4)|evacuation;
             break;
@@ -341,7 +388,7 @@ void VisSoftCursor(int mode)
 }
 void VisPutCursorAt(unsigned cx,unsigned cy)
 {
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(__DJGPP__)
     if(columns > 1)
     {
         register unsigned short h = (VidH-1) / columns;
@@ -354,14 +401,29 @@ void VisPutCursorAt(unsigned cx,unsigned cy)
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
     size = (size << 8) | (VidCellHeight-1);
     if(C64palette) size = 0x3F3F;
+    #ifdef __DJGPP__
+    unsigned addr = cux + cuy*VidW;
+    _farpokeb(_dos_ds, 0x450, (cuy<<8) + cux);
+    outport(0x3D4, 0x0E + (addr&0xFF00));
+    outport(0x3D4, 0x0F + ((addr&0xFF)<<8));
+    // Set cursor shape: lines-4 to lines-3, or 6 to 7
+    outport(0x3D4, 0x0A + ((VidCellHeight>8 ? VidCellHeight-4 : 6) << 8));
+    outport(0x3D4, 0x0B + ((VidCellHeight>8 ? VidCellHeight-3 : 7) << 8));
+    #else
     _asm { mov ah, 2; mov bh, 0; mov dh, cuy; mov dl, cux; int 0x10 }
     _asm { mov ah, 1; mov cx, size; int 0x10 }
+    #endif
     CursorCounter=0;
 #else
     cx=cx; cy=cy;
 #endif
+#ifdef __DJGPP__
+    _farpokeb(_dos_ds, 0x450, cx);
+    _farpokeb(_dos_ds, 0x451, cy);
+#else
     *(unsigned char*)MK_FP(0x40,0x50) = cx;
     *(unsigned char*)MK_FP(0x40,0x51) = cy;
+#endif
 }
 void VisSetCursor()
 {
@@ -378,7 +440,7 @@ static void Cycles_Adjust(int direction)
 {
     Cycles_Trend = direction;
 }
-static void Cycles_Check()
+void Cycles_Check()
 {
     // For Cycles adjust on DOSBOX
     if(Cycles_Trend > 0 && CYCLES_Goal < 1000000l)
@@ -398,15 +460,23 @@ static void Cycles_Check()
         //static unsigned counter=0;
         //if(counter != 1) return;//if(++counter < 5) return;
         //counter=0;
+        CYCLES_Current = CYCLES_Goal;
+
+        #ifdef __BORLANDC__
         char Buf[64];
-        sprintf(Buf, " CYCLES=%ld", CYCLES_Current = CYCLES_Goal);
-
+        sprintf(Buf, " CYCLES=%ld", CYCLES_Current);
         unsigned psp = getpsp();
-        sprintf( (char*) MK_FP(psp, 0x80), "%s", Buf);
-
+        strcpy( (char*) MK_FP(psp, 0x80), Buf);
         // FIXME: THIS METHOD OF INVOKING CONFIG.COM DEPENDS ON EXACT DOSBOX VERSION.
-        // ALSO, IT WILL NOT WORK IF RUNNING E.G. UNDER FREEDOS...
-         _asm { db 0xFE,0x38,0x06,0x00 }
+        // ALSO, IT WILL NOT WORK IF RUNNING E.G. UNDER FREEDOS OR DPMI...
+        _asm { db 0xFE,0x38,0x06,0x00 }
+        #elif defined(__DJGPP__)
+
+        /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
+         * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
+        __asm__ volatile("movl %0, %%tr2" : : "a"(CYCLES_Current));
+
+        #endif
     }
     Cycles_Trend = 0;
 }
@@ -484,9 +554,15 @@ static ColorSlideCache slide2(slide2_colors, slide2_positions, sizeof(slide2_col
 
 void VisRenderStatus()
 {
+    static unsigned long LastMarioTimer = 0xFFFFFFFFul;
+    if(MarioTimer == LastMarioTimer) return;
+    LastMarioTimer = MarioTimer;
+
     unsigned StatusWidth = VidW*columns;
 
-    LongVecType Hdr(StatusWidth*2);
+    //LongVecType Hdr(StatusWidth*2);
+    static LongVecType Hdr(512);
+
     unsigned short* Stat = GetVidMem(0, (VidH-1) / columns, 1);
 
     time_t t = time(0);
@@ -515,9 +591,15 @@ void VisRenderStatus()
 
     // Because running CPUinfo() interferes with our PIT clock,
     // only run the CPU speed check maybe twice in a second.
-    static float cpuspeed = 0.0;
+    static double cpuspeed = 12345678.90123;
     static unsigned long last_check_when = 0;
+    #ifdef __BORLANDC__
     unsigned long now_when = (*(unsigned long*)MK_FP(0x40,0x6C)) & ~7ul;
+    #elif defined(__DJGPP__)
+    unsigned long now_when = _farpeekl(_dos_ds, 0x46C) & ~7ul;
+    #else
+    unsigned long now_when = 0;
+    #endif
     if(last_check_when != now_when)
     {
         cpuspeed = CPUinfo();
@@ -680,7 +762,7 @@ void VisRenderStatus()
 }
 void VisRender()
 {
-    LongVecType EmptyLine;
+    static LongVecType EmptyLine;
 
     unsigned winh = VidH - 1;
     if(StatusLine[0]) --winh;
@@ -849,13 +931,22 @@ void WaitInput(int may_redraw = 1)
             }
             VisRenderStatus();
             VisSoftCursor(0);
-        #ifdef __BORLANDC__
+        #if defined(__BORLANDC__) || defined(__DJGPP__)
             if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
             || SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
             {
                 if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect)
                     Cycles_Adjust(-1);
+              #ifdef __BORLANDC__
                 _asm { hlt }
+              #else
+                //__dpmi_yield();
+                __asm__ volatile("hlt");
+                // dpmi_yield is not used, because it's not implemented in dosbox
+                // Instead, we issue "hlt" and patch DOSBox to not produce an exception
+                /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
+                 * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
+              #endif
             }
         #endif
         } while(!kbhit());
@@ -1131,7 +1222,7 @@ void BlockIndent(int offset)
         if(BlockBegin.x > 0) BlockBegin.x += offset;
         if(BlockEnd.x   > 0) BlockEnd.x   += offset;
     }
-    else if(min_indent >= -offset)
+    else if(int(min_indent) >= -offset)
     {
         unsigned outdent = -offset;
         LongVecType empty;
@@ -1237,8 +1328,8 @@ int SelectFont()
     unsigned curh = VidH * VidCellHeight                        ;// * (1+dblh);
 
     const unsigned noptions = sizeof(options) / sizeof(*options);
-    unsigned char wdblset[5] = { dblw, dblw, !dblw, dblw, !dblw };
-    unsigned char hdblset[5] = { dblh, dblh, dblh, !dblh, !dblh };
+    unsigned char wdblset[5] = { (unsigned char)dblw, (unsigned char)dblw, (unsigned char)!dblw, (unsigned char)dblw, (unsigned char)!dblw };
+    unsigned char hdblset[5] = { (unsigned char)dblh, (unsigned char)dblh, (unsigned char)dblh, (unsigned char)!dblh, (unsigned char)!dblh };
     signed int maxwidth[5] = { 0,0,0,0,0 };
     for(unsigned n=0; n<noptions; ++n)
     {
@@ -1356,7 +1447,7 @@ int SelectFont()
         else if(c == '-')
             { if(sel_y) sel_y=0; else sel_x=0; }
         else if(c == ' ' || c == '+')
-            { if(sel_y < noptions-1) sel_y=noptions-1; else sel_x=4; }
+            { if(sel_y < int(noptions-1)) sel_y=noptions-1; else sel_x=4; }
         else if(c == 0)
             switch(getch())
             {
@@ -1365,7 +1456,7 @@ int SelectFont()
                     --sel_y;
                     break;
                 case 'P': dn:
-                    if(++sel_y >= noptions) sel_y = -1;
+                    if(++sel_y >= int(noptions)) sel_y = -1;
                     break;
                 case 'K': left: if(sel_x>0) --sel_x; else { sel_x=4; goto up; } break;
                 case 'M': right: if(sel_x<4) ++sel_x; else { sel_x=0; goto dn; } break;
@@ -1666,7 +1757,11 @@ int main(int argc, char**argv)
     //VgaSetCustomMode(80,50,16,1,0,0, 2); columns = 2;
   #endif
 
-#ifdef __BORLANDC__
+#ifdef __DJGPP__
+    __djgpp_nearptr_enable();
+#endif
+
+#if defined(__BORLANDC__) || defined(__DJGPP__)
     InstallMario();
 #endif
     Syntax.Parse("c.jsf");
@@ -1681,7 +1776,7 @@ int main(int argc, char**argv)
     VgaGetMode();
     VisSetCursor();
 
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(__DJGPP__)
     outportb(0x3C4, 1); use9bit = !(inportb(0x3C5) & 1);
     outportb(0x3C4, 1); dblw    = (inportb(0x3C5) >> 3) & 1;
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
@@ -1696,6 +1791,8 @@ int main(int argc, char**argv)
 
 #ifdef __BORLANDC__
         int shift = 3 & (*(char*)MK_FP(0x40,0x17));
+#elif defined(__DJGPP__)
+        int shift = 3 & _farpeekb(_dos_ds, 0x417);
 #else
         int shift = 0;
 #endif
@@ -1708,7 +1805,7 @@ int main(int argc, char**argv)
             StatusLine[0] = '\0';
             VisRender();
         }
-        unsigned DimX = VidW, DimY = VidH-1;
+        unsigned /*DimX = VidW,*/ DimY = VidH-1;
         char WasAppend = 0;
         chars_typed += 1;
         switch(c)
@@ -2164,7 +2261,7 @@ exit:;
                          use9bit, dblw, dblh, columns);
     }
     VisSetCursor();
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(__DJGPP__)
     DeInstallMario();
 #endif
     exit(0);

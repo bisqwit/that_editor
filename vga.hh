@@ -1,8 +1,31 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
+
 #ifdef __BORLANDC__
 unsigned short* VidMem = (unsigned short *) MK_FP(0xB000, 0x8000);
+#define Pokeb(seg,ofs,v) *(unsigned char*)MK_FP(seg,ofs) = (v)
+#define Pokew(seg,ofs,v) *(unsigned short*)MK_FP(seg,ofs) = (v)
+#define Pokel(seg,ofs,v) *(unsigned long*)MK_FP(seg,ofs) = (v)
+#define Peekb(seg,ofs) *(const unsigned char*)MK_FP(seg,ofs)
+#define Peekw(seg,ofs) *(const unsigned short*)MK_FP(seg,ofs)
+#define Peekl(seg,ofs) *(const unsigned long*)MK_FP(seg,ofs)
+#else
+
+#ifdef __DJGPP__
+#include <go32.h>
+#include <sys/farptr.h>
+#include <sys/nearptr.h>
+// In order to access BIOS timer and VGA memory:
+static unsigned short* const VidMem = reinterpret_cast<unsigned short*>(__djgpp_conventional_base + 0xB8000);
+#define Pokeb(seg,ofs,v) _farpokeb(_dos_ds, (seg)*0x10+(ofs), (v))
+#define Pokew(seg,ofs,v) _farpokew(_dos_ds, (seg)*0x10+(ofs), (v))
+#define Pokel(seg,ofs,v) _farpokel(_dos_ds, (seg)*0x10+(ofs), (v))
+#define Peekb(seg,ofs) _farpeekb(_dos_ds, (seg)*0x10+(ofs))
+#define Peekw(seg,ofs) _farpeekw(_dos_ds, (seg)*0x10+(ofs))
+#define Peekl(seg,ofs) _farpeekl(_dos_ds, (seg)*0x10+(ofs))
+#define outport(r,b) outportw(r,b)
 #else
 unsigned short VidMem[256*256];
+#endif
 #endif
 
 #define DOSBOX_HICOLOR_OFFSET (-0x8000l)
@@ -11,6 +34,10 @@ unsigned char VidW=80, VidH=25, VidCellHeight=16;
 double VidFPS = 60.0;
 const unsigned char* VgaFont = 0;
 int C64palette = 0, FatMode = 0, DispUcase = 0, DCPUpalette = 0;
+
+#ifdef __DJGPP__
+_go32_dpmi_seginfo font_memory_buffer{};
+#endif
 
 static const unsigned char c64font[8*(256-64)] = {
 #include "c64font.inc"
@@ -68,6 +95,73 @@ void VgaGetFont()
         pop bp
         pop es
     }
+#else
+    __dpmi_regs r{}; r.x.ax = 0x1130; r.h.bh = mode; __dpmi_int(0x10, &r);
+    VgaFont = reinterpret_cast<const unsigned char*>(__djgpp_conventional_base + r.x.bp + r.x.es*0x10);
+#endif
+}
+
+void VgaEnableFontAccess()
+{
+    // Get font access
+    outport(0x3C4, 0x0100);
+    outport(0x3C4, 0x0402);
+    outport(0x3C4, 0x0704);
+    outport(0x3C4, 0x0300);
+    outport(0x3CE, 0x0204);
+    outport(0x3CE, 0x0005);
+    outport(0x3CE, 0x0406);
+}
+void VgaDisableFontAccess()
+{
+    // Relinquish font access
+    outport(0x3C4, 0x0100);
+    outport(0x3C4, 0x0302);
+    outport(0x3C4, 0x0304);
+    outport(0x3C4, 0x0300);
+    outport(0x3CE, ((inportb(0x3CC) & 1) << 10) | 0xA06);
+    outport(0x3CE, 0x0004);
+    outport(0x3CE, 0x1005);
+}
+void VgaSetFont(unsigned char height, unsigned number, unsigned first, const unsigned char* source)
+{
+#ifdef __BORLANDC__
+    _asm {
+        push es
+        push bp
+         les bp, source
+         mov ax, 0x1100
+         mov bh, height
+         mov bl, 0
+         mov cx, number
+         mov dx, first
+         int 0x10
+        pop bp
+        pop es
+    }
+#else
+  #if 0
+    auto& g = font_memory_buffer;
+    if(!g.size)
+    {
+        g.size = 256 * 32; // maximum estimated size
+        _go32_dpmi_allocate_dos_memory(&g);
+    }
+    unsigned size_bytes = height * number;
+    memcpy(reinterpret_cast<char*>(__djgpp_conventional_base + g.rm_segment*0x10+g.rm_offset),
+           source,
+           size_bytes);
+    //REGS r{}; r.w.ax = 0x1100; r.h.bh = height; r.w.cx = number; r.w.dx = first;
+    //SREGS s{g.rm_segment,g.rm_segment,g.rm_segment, g.rm_segment,g.rm_segment,g.rm_segment}; r.w.bp = g.rm_offset;
+    //int86x(0x10, &r,&r, &s);
+    __dpmi_regs r{}; r.x.ax = 0x1100; r.h.bh = height; r.x.cx = number; r.x.dx = first;
+    r.x.ds = r.x.es = g.rm_segment; r.x.bp = g.rm_offset;
+    __dpmi_int(0x10, &r);
+  #else
+    unsigned tgt = __djgpp_conventional_base + 0xA0000;
+    for(unsigned c=0; c<number; ++c)
+        __builtin_memcpy(reinterpret_cast<char*>(tgt + (first+c)*32), source + c*height, height);
+  #endif
 #endif
 }
 
@@ -76,10 +170,16 @@ void VgaGetMode()
 #ifdef __BORLANDC__
     _asm { mov ah, 0x0F; int 0x10; mov VidW, ah }
     _asm { mov ax, 0x1130; xor bx,bx; int 0x10; mov VidH, dl; mov VidCellHeight, cl }
-    if(VidH == 0) VidH = 25; else VidH += 1;
     _asm { mov ax, 0x1003; xor bx,bx; int 0x10 } // Disable blink-bit
-    VgaGetFont();
 #endif
+#ifdef __DJGPP__
+    {REGS r{}; r.h.ah = 0xF; int86(0x10,&r,&r); VidW = r.h.ah;
+    r.w.ax = 0x1130; r.w.bx = 0; int86(0x10,&r,&r); VidH = r.h.dl; VidCellHeight = r.h.cl;
+    r.w.ax = 0x1003; r.w.bx = 0; int86(0x10,&r,&r);} // Disable blink-bit
+#endif
+    if(VidH == 0) VidH = 25; else VidH += 1;
+    VgaGetFont();
+
     if(FatMode) VidW /= 2;
     if(C64palette) { VidW -= 4; VidH -= 5; }
     if(columns)
@@ -91,11 +191,19 @@ void VgaGetMode()
 
 void VgaSetMode(unsigned modeno)
 {
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(__DJGPP__)
+  #ifdef __BORLANDC__
     if(modeno < 0x100)
         _asm { mov ax, modeno; int 0x10 }
     else
         _asm { mov bx, modeno; mov ax, 0x4F02; int 0x10 }
+  #endif
+  #ifdef __DJGPP__
+    if(modeno < 0x100)
+        { REGS r{}; r.w.ax = modeno; int86(0x10,&r,&r); }
+    else
+        { REGS r{}; r.w.bx = modeno; r.w.ax = 0x4F02; int86(0x10,&r,&r); }
+  #endif
 
     static const unsigned long c64pal[16] =
     {
@@ -191,164 +299,63 @@ void VgaSetCustomMode(
         height = (height-1) / num_columns + 1;
     }
 
-#ifdef __BORLANDC__
+#if defined( __BORLANDC__) || defined(__DJGPP__)
     unsigned hdispend = width;
     unsigned vdispend = height*font_height;
     if(is_double) vdispend *= 2;
     unsigned htotal = width*5/4;
     unsigned vtotal = vdispend+45;
 
-    *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
+    Pokeb(0x40, 0x85, font_height);
 
-    //if(1)
-    {
-        void* emptyfont = malloc(8192);
-        memset(emptyfont, 0, 8192);
-        // Set an empty 32-pix font
-        _asm {
-            push es
-            push bp
-             les bp, emptyfont
-             mov ax, 0x1100
-             mov bx, 0x2000
-             mov cx, 256
-             mov dx, 0
-             int 0x10
-            pop bp
-            pop es
-        }
-        free(emptyfont);
-    }
+    {// Set an empty 32-pix font
+    unsigned char* emptyfont = (unsigned char*)malloc(8192);
+    memset(emptyfont, 0, 8192);
+    VgaEnableFontAccess();
+    VgaSetFont(32, 256,0, emptyfont);
+    VgaDisableFontAccess();
+    free(emptyfont);}
+
     if(font_height == 16)
     {
         // Set standard 80x25 mode as a baseline
         // This triggers font reset on JAINPUT.
-        *(unsigned char*)MK_FP(0x40,0x87) |= 0x80; // tell BIOS to not clear VRAM
+        Pokeb(0x40,0x87, Peekb(0x40,0x87)|0x80); // tell BIOS to not clear VRAM
         VgaSetMode(3);
-        *(unsigned char*)MK_FP(0x40,0x87) &= ~0x80;
+        Pokeb(0x40,0x87, Peekb(0x40,0x87)&~0x80);
     }
 
-    if(font_height ==14) { _asm { mov ax, 0x1101; mov bl, 0; int 0x10 } }
-    if(font_height == 8) {
-        _asm { mov ax, 0x1102; mov bl, 0; int 0x10 }
-        if(DCPUpalette)
-        {
-            _asm {
-                push es
-                push bp
-                 mov ax, seg dcpu16font
-                 mov es, ax
-                 mov bp, offset dcpu16font
-                 mov ax, 0x1100
-                 mov bx, 0x0800
-                 mov cx, 256
-                 mov dx, 0
-                 int 0x10
-                pop bp
-                pop es
-            }
-        }
-        if(C64palette)
-        {
-            _asm {
-                push es
-                push bp
-                 mov ax, seg c64font
-                 mov es, ax
-                 mov bp, offset c64font
-                 mov ax, 0x1100
-                 mov bx, 0x800
-                 mov cx, 256 - 64
-                 mov dx, 32      // Contains: 20..DF
-                 int 0x10
-                pop bp
-                pop es
-            }
-        }
+    if(font_height ==14) {
+        #ifdef __BORLANDC__
+        _asm { mov ax, 0x1101; mov bl, 0; int 0x10 }
+        #else
+        REGS r{}; r.w.ax = 0x1101; r.h.bl = 0; int86(0x10,&r,&r);
+        #endif
     }
+    if(font_height == 8) {
+        #ifdef __BORLANDC__
+        _asm { mov ax, 0x1102; mov bl, 0; int 0x10 }
+        #else
+        REGS r{}; r.w.ax = 0x1102; r.h.bl = 0; int86(0x10,&r,&r);
+        #endif
+        VgaEnableFontAccess();
+        if(DCPUpalette) VgaSetFont(8,256, 0, dcpu16font);
+        if(C64palette) VgaSetFont(8, 256-64, 32,c64font); // Contains 20..DF
+    }
+    VgaEnableFontAccess();
     if(font_height == 32) {
         const unsigned char* font = FatMode ? p32wfont : p32font;
-        _asm {
-            push es
-            push bp
-             les bp, font
-             mov ax, 0x1100
-             mov bx, 0x2000
-             mov cx, 256
-             mov dx, 0
-             int 0x10
-            pop bp
-            pop es
-        }
+        VgaSetFont(32,256,0, font);
     }
-    if(font_height == 19) {
-        _asm {
-            push es
-            push bp
-             mov ax, seg p19font
-             mov es, ax
-             mov bp, offset p19font
-             mov ax, 0x1100
-             mov bx, 0x1300
-             mov cx, 256
-             mov dx, 0
-             int 0x10
-            pop bp
-            pop es
-        }
-    }
-    if(font_height == 12) {
-        _asm {
-            push es
-            push bp
-             mov ax, seg p12font
-             mov es, ax
-             mov bp, offset p12font
-             mov ax, 0x1100
-             mov bx, 0x0C00
-             mov cx, 256
-             mov dx, 0
-             int 0x10
-            pop bp
-            pop es
-        }
-    }
-    if(font_height == 10) {
-        _asm {
-            push es
-            push bp
-             mov ax, seg p10font
-             mov es, ax
-             mov bp, offset p10font
-             mov ax, 0x1100
-             mov bx, 0x0A00
-             mov cx, 256
-             mov dx, 0
-             int 0x10
-            pop bp
-            pop es
-        }
-    }
-    if(font_height == 15) {
-        _asm {
-            push es
-            push bp
-             mov ax, seg p15font
-             mov es, ax
-             mov bp, offset p15font
-             mov ax, 0x1100
-             mov bx, 0x0F00
-             mov cx, 256
-             mov dx, 0
-             int 0x10
-            pop bp
-            pop es
-        }
-    }
+    if(font_height == 19) VgaSetFont(19,256,0, p19font);
+    if(font_height == 12) VgaSetFont(12,256,0, p12font);
+    if(font_height == 10) VgaSetFont(10,256,0, p10font);
+    if(font_height == 15) VgaSetFont(15,256,0, p15font);
+    VgaDisableFontAccess();
 
     /* This script is, for the most part, copied from DOSBox. */
 
-    {unsigned char Seq[5] = { 0, !is_9pix + 8*is_half, 3, 0, 6 };
+    {unsigned char Seq[5] = { 0, (unsigned char)(!is_9pix + 8*is_half), 3, 0, 6 };
     for(unsigned a=0; a<5; ++a) outport(0x3C4, a | (Seq[a] << 8));}
 
     // Disable write protection
@@ -417,27 +424,25 @@ void VgaSetCustomMode(
 
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
                                  0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
-                                 is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
+                                 (unsigned char)(is_9pix*4), 0, 0x0F, (unsigned char)(is_9pix*8), 0 };
     if(C64palette || (DCPUpalette && font_height == 8)) //DCPU/Primer/C64 hack
     {
         for(unsigned a=0; a<0x10; ++a) Att[a] = 0x20+a;
     }
 
-    _asm { mov dx,0x3DA; in al,dx }
+    inportb(0x3DA);
     {for(unsigned a=0x0; a<0x15; ++a)
         { if(a == 0x11) continue;
           outportb(0x3C0, a);
           outportb(0x3C0, Att[a]); }} }
-    _asm { mov dx,0x3DA; in al,dx }
+    inportb(0x3DA);
     outportb(0x3C0, 0x20);
 
-    *(unsigned char*)MK_FP(0x40,0x10) &= ~0x30;
-    *(unsigned char*)MK_FP(0x40,0x10) |= 0x20;
-
-    *(unsigned char*)MK_FP(0x40,0x65) = 0x29;
-    *(unsigned char*)MK_FP(0x40, 0x4A) = width;
-    *(unsigned char*)MK_FP(0x40, 0x84) = height-1;
-    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
+    Pokeb(0x40,0x10, (Peekb(0x40,0x10) & ~0x30) | 0x20);
+    Pokeb(0x40,0x65, 0x29);
+    Pokeb(0x40, 0x4A, width);
+    Pokeb(0x40, 0x84, height-1);
+    Pokew(0x40, 0x4C, width*height*2);
 
     double clock = 28322000.0;
     if(((misc_output >> 2) & 3) == 0) clock = 25175000.0;

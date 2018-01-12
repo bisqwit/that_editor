@@ -1,6 +1,10 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include <string.h>
-#include "vec_c.hh"
+
+#ifdef __GNUC__
+# include <algorithm>
+# include <vector>
+#endif
 
 class JSF
 {
@@ -567,12 +571,14 @@ private:
         }
     }
 
+    #ifndef __GNUC__
     static int TableItemCompareForSort(const void * a, const void * b)
     {
         table_item * aa = (table_item *)a;
         table_item * bb = (table_item *)b;
         return strcmp(aa->token, bb->token);
     }
+    #endif
     static inline void sort(TabType& tab)
     {
         /*
@@ -586,6 +592,11 @@ private:
             tab[i] = k;
         }
         */
+        #ifdef __GNUC__
+        std::sort(tab.begin(), tab.end(), [&](table_item& a, table_item& b)
+                                          { return strcmp(a.token, b.token) < 0; });
+        #else
         qsort(&tab[0], tab.size(), sizeof(tab[0]), TableItemCompareForSort);
+        #endif
     }
 };

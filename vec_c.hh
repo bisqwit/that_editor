@@ -4,10 +4,17 @@
 
 /* Vector of unsigned char */
 
+#ifdef __GNUC__
+ #include <vector>
+ using CharVecType = std::vector<unsigned char>;
+#else
+
 #define T       unsigned char
 #define VecType CharVecType
 #include "vecbase.hh"
 #undef VecType
 #undef T
+
+#endif
 
 #endif

@@ -6,6 +6,11 @@
 
 #include "vec_c.hh"
 
+#ifdef __GNUC__
+ #include <vector>
+ using CharPtrVecType = std::vector<std::vector<unsigned char>>;
+#else
+
 #define UsePlacementNew
 
 #define T       CharVecType
@@ -16,5 +21,7 @@
 #undef VecType
 #undef T
 #undef  UsePlacementNew
+
+#endif
 
 #endif

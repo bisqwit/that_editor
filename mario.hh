@@ -196,12 +196,12 @@ void MarioTranslate(
     const unsigned base = FatMode ? 0x80 : 0xC0;
 
     const unsigned short chartable[6] =
-        { base + 0x0 + MarioColor,
-          base + 0x3 + MarioColor,
-          base + 0x4 + MarioColor,
-          base + 0x8 + MarioColor,
-          base + 0x9 + MarioColor,
-          base + 0xD + MarioColor
+        { (unsigned short)(base + 0x0 + MarioColor),
+          (unsigned short)(base + 0x3 + MarioColor),
+          (unsigned short)(base + 0x4 + MarioColor),
+          (unsigned short)(base + 0x8 + MarioColor),
+          (unsigned short)(base + 0x9 + MarioColor),
+          (unsigned short)(base + 0xD + MarioColor)
         };
 
     unsigned fontdatasize  = 0;
@@ -209,8 +209,8 @@ void MarioTranslate(
     unsigned spritewide = 16;
     if(VidCellHeight >= 29) spritewide = 34;
     for(int basex = mariox - (mariox % 8)
-      ; basex < mariox + spritewide
-     && basex < room_wide
+      ; basex < int(mariox + spritewide)
+     && basex < int(room_wide)
       ; basex += 8)
     {
         if(basex < 0) continue;
@@ -276,6 +276,17 @@ void MarioTranslate(
         }
     }
 #endif
+#ifdef __DJGPP__
+    if(numchars > 0)
+    {
+        VgaEnableFontAccess();
+        VgaSetFont(VidCellHeight, 1, base+0x0, RevisedFontData+0);
+        VgaSetFont(VidCellHeight, 2, base+0x3, RevisedFontData+VidCellHeight);
+        VgaSetFont(VidCellHeight, 2, base+0x8, RevisedFontData+VidCellHeight*3);
+        VgaSetFont(VidCellHeight, 1, base+0xD, RevisedFontData+VidCellHeight*5);
+        VgaDisableFontAccess();
+    }
+#endif
 }
 
 #ifdef __BORLANDC__
@@ -283,7 +294,7 @@ static unsigned short rate=120U, Clock=0u, Counter=0x1234DCUL/rate;
 static void (interrupt *OldI08)();
 static void interrupt MarioI08()
 {
-    ++MarioTimer;
+    MarioTimer += 1;
     _asm {
         mov ax, Counter
         add Clock, ax
@@ -295,16 +306,72 @@ P1: _asm { mov al, 0x20; out 0x20, al }
 P2:;
 }
 #endif
+#ifdef __DJGPP__
+static unsigned rate=60U, Clock=0u, Counter=0x1234DCUL/rate;
+static _go32_dpmi_seginfo OldI08_rm, NewI08_rm;
+static _go32_dpmi_seginfo OldI08_pm, NewI08_pm;
+static _go32_dpmi_registers I08regs;
+
+static bool Count()
+{
+    MarioTimer += 2;
+    Clock += Counter;
+    if(Clock & 0x10000)
+    {
+        Clock &= 0xFFFF;
+        return true;
+    }
+    return false;
+}
+
+
+static void MarioI08_rm()
+{
+    if(Count())
+    {
+        I08regs.x.cs = OldI08_rm.rm_segment;
+        I08regs.x.ip = OldI08_rm.rm_offset;
+        I08regs.x.ss = I08regs.x.sp = 0;
+        //__dpmi_simulate_real_mode_procedure_iret(&I08regs);
+        _go32_dpmi_simulate_fcall_iret(&I08regs);
+        //outportb(0x20,0x20);
+    }
+    else
+    {
+        outportb(0x20,0x20);
+    }
+}
+static void MarioI08_pm()
+{
+    if(Count())
+    {
+    #if 0
+        _farpokel(_dos_ds, 0x46C, _farpeekl(_dos_ds, 0x46C)+1);
+    #else
+        I08regs.x.cs = OldI08_rm.rm_segment;
+        I08regs.x.ip = OldI08_rm.rm_offset;
+        I08regs.x.ss = I08regs.x.sp = 0;
+        __dpmi_simulate_real_mode_procedure_iret(&I08regs);
+    #endif
+    }
+    outportb(0x20,0x20);
+}
+#endif
 
 void FixMarioTimer()
 {
-#ifdef __BORLANDC__
     disable();
+#ifdef __BORLANDC__
     _asm { mov al, 0x34;    out 0x43, al
            mov ax, Counter; out 0x40, al
            mov al, ah;      out 0x40, al }
-    enable();
 #endif
+#ifdef __DJGPP__
+    outportb(0x43,0x34);
+    outportb(0x40, Counter);
+    outportb(0x40, Counter>>8);
+#endif
+    enable();
 }
 
 void InstallMario()
@@ -313,8 +380,21 @@ void InstallMario()
     disable();
     OldI08 = (void(interrupt*)()) *(void **)MK_FP(0, 8*4);
     *(void **)MK_FP(0, 8*4) = (void *)MarioI08;
-    FixMarioTimer();
 #endif
+#ifdef __DJGPP__
+    _go32_dpmi_get_real_mode_interrupt_vector(8, &OldI08_rm);
+    NewI08_rm.pm_offset = (unsigned long)MarioI08_rm;
+    NewI08_rm.pm_selector = _go32_my_cs();
+    _go32_dpmi_allocate_real_mode_callback_iret(&NewI08_rm, &I08regs);
+    _go32_dpmi_set_real_mode_interrupt_vector(8, &NewI08_rm);
+
+    _go32_dpmi_get_protected_mode_interrupt_vector(8, &OldI08_pm);
+    NewI08_pm.pm_offset   = reinterpret_cast<unsigned long>(MarioI08_pm);
+    NewI08_pm.pm_selector = _go32_my_cs();
+    _go32_dpmi_allocate_iret_wrapper(&NewI08_pm);
+    _go32_dpmi_set_protected_mode_interrupt_vector(8, &NewI08_pm);
+#endif
+    FixMarioTimer();
 }
 
 void DeInstallMario()
@@ -325,6 +405,16 @@ void DeInstallMario()
     _asm { mov al, 0x34;    out 0x43, al
            xor al, al;      out 0x40, al
            /*********/      out 0x40, al }
+    enable();
+#endif
+#ifdef __DJGPP__
+    _go32_dpmi_set_real_mode_interrupt_vector(8, &OldI08_rm);
+    _go32_dpmi_set_protected_mode_interrupt_vector(8, &OldI08_pm);
+    _go32_dpmi_free_iret_wrapper(&NewI08_pm);
+    disable();
+    outportb(0x43,0x34);
+    outportb(0x40,0);
+    outportb(0x40,0);
     enable();
 #endif
 }
