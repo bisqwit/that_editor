@@ -1,0 +1,29 @@
+# JOE syntax highlight file for typical UNIX configuration files
+
+=Idle		07
+=Comment 	02
+=String 	03
+=Escape 	0B
+=PlainEscape	04
+
+:idle Idle
+	*		idle
+	"#"		comment		recolor=-1
+	"\\"		plain_escape	recolor=-1
+	"\""		string		recolor=-1
+
+:comment Comment
+	*		comment
+	"\n"		idle
+
+:string String
+	*		string
+	"\""		idle
+	"\\"		string_escape	recolor=-1
+
+:string_escape Escape
+	*		string
+	"\n"		string		recolor=-2
+
+:plain_escape PlainEscape
+	*		idle
