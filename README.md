@@ -27,13 +27,20 @@ featuring diverse topics from snake games to 3D engines.
 
 I normally use [Joe](https://joe-editor.sourceforge.io/)
 for all my editing purposes — whether programming or otherwise.
+It is a terminal-based editor, so I run it in Xterm. Yes, even under Windows.
 
 ![Joe looks like this.](pic/joe.png)
 
+But back in 2010 or so, when I began making these videos,
+I had too slow hardware to do any kind of desktop recording in real time.
+This situation persisted until 2016.
+However, DOSBox contains a full-featured simulated environment
+with a built-in video recorder that works perfectly
+regardless of what kind of computer you run it on.
+So I had to use DOSBox.
+Incidentally, DOS was already a very familiar platform to me.
+
 My editor was written only because Joe could not be compiled for DOS.
-I used DOSBox only because I had too slow hardware to do desktop recording
-in real time, and DOSBox contains a full-featured simulated environment
-with a built-in recorder that works regardless of host system speed.
 
 There *were* other syntax-coloring editors for DOS, and I actually
 wanted to and *did* use Borland C++ 3.1 IDE for some of my earlier
