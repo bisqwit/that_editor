@@ -8,20 +8,40 @@ Some more information at: https://github.com/bisqwit/compiler_series/tree/master
 
 ## What
 
+It is a programming editor for DOS environments. More specifically, it is
+something that *looks* like a programming editor for DOS environments.
+
 Provided strictly AS-IS, with a mild warning that you really do not want to
 use this editor. Seriously. It won’t do you any good.
 Get a *real editor* (https://joe-editor.sourceforge.io/) instead.
+You can get it to look pretty much identical,
+and if you want a window sitter to go with it, get e.g.
+[MaCoPiX](http://rosegray.sakura.ne.jp/macopix/index-e.html).
 
 ## Why does it exist
 
-This editor was written only because Joe would not run in DOSBox.
+I am a video producer at YouTube. I make programming videos
+featuring diverse topics from snake games to 3D engines.
+
+![Picture shows the kind of videos I make.](pic/threadsnap.png)
+
+I normally use [Joe](https://joe-editor.sourceforge.io/)
+for all my editing purposes — whether programming or otherwise.
+
+![Joe looks like this.](pic/joe.png)
+
+My editor was written only because Joe could not be compiled for DOS.
 I used DOSBox only because I had too slow hardware to do desktop recording
 in real time, and DOSBox contains a full-featured simulated environment
 with a built-in recorder that works regardless of host system speed.
 
 There *were* other syntax-coloring editors for DOS, and I actually
 wanted to and *did* use Borland C++ 3.1 IDE for some of my earlier
-videos. But then I wanted to make a video with wider screen,
+videos.
+
+![Borland Pascal, for example, looks like this.](pic/tp.png)
+
+But then I wanted to make a video with wider screen,
 and despite my best efforts, I could not binary-patch Borland C++
 to perfectly cooperate with screens that have other width
 than 80 characters.
@@ -89,10 +109,117 @@ and recolor some previous section using a select attribute.
 The source code file is continuously scanned from beginning to the end
 until everything has been scanned at least once since the last update.
 
-### Mario
+#### Element type (old)
 
-The Mario animation at the top uses the same principle as Norton tools
-did on DOS to show an arrow mouse cursor in text mode.
+    1615  1211   8        0
+     +-+---+-+---+--------+
+     |B|bbb|I|fff|cccccccc|
+     +-+---+-+---+--------+
+     B   = blink
+     bbb = background color (0-7)
+     I   = high-intensity
+     fff = foreground color (0-7)
+     ccc = character code (0-255)
+
+#### Element type (new)
+
+    With extended attribute (requires patched DOSBox):
+    
+    323130292827262524       1615       8        0
+     +-+-+-+-+-+-+-+-+--------+-+-------+--------+
+     |1|f|B|v|o|i|d|u|bbbbbbbb|1|fffffff|cccccccc|
+     +-+-+-+-+-+-+-+-+--------+-+-------+--------+
+     
+    1   = Extended attribute flag
+    fff = foreground color (0-255); note MSB is stored separately
+    B   = blink
+    v   = inverse
+    o   = bold
+    i   = italic
+    d   = dim
+    u   = underline
+    bbb = background color (0-255)
+    ccc = character code (0-255)
+
+    Without extended attribute (compatible with any DOS system):
+    
+    32               1615  12    8        0
+     +----------------+-+---+----+--------+
+     |0000000000000000|B|bbb|ffff|cccccccc|
+     +----------------+-+---+----+--------+
+     B   = blink
+     bbb = background color (0-7)
+     fff = foreground color (0-15)
+     ccc = character code (0-255)
+
+This attribute word is stored in the video RAM in such manner,
+that the first 16 bits go into the page at B800:0000,
+but the top 16 bits go simultaneously to the page at B000:0000.
+DOSBox was specifically modified to account for this data
+and to render it properly.
+The doubling of the attribute bit is there to avoid false positives.
+
+SGR features of ANSI codes that are not supported yet:
+* Double-underline is not supported
+* Strikeout is not supported
+* JSF autoconverts inverse, it is not used in VRAM
+* True 24-bit RGB is not supported
+
+#### Colors
+
+As per this chart: https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit
+
+    0=Black   1=Red      2=Green   3=Yellow/Brown
+    4=Blue    5=Magenta  6=Cyan    7=White/Light gray
+    8-15    = High-intensity versions of 0-7 (where 15=white)
+    16-231  = 6x6x6 RGB cube
+    232-255 = Gray ramp
+
+The specific values are:
+
+    static unsigned xterm256table[256] =
+        { Make(0,0,0), Make(21,0,0), Make(0,21,0), Make(21,5,0),
+          Make(0,0,21), Make(21,0,21), Make(0,21,21), Make(21,21,21),
+          Make(7,7,7), Make(31,5,5), Make(5,31,5), Make(31,31,5),
+          Make(5,5,31), Make(31,5,31), Make(5,31,31), Make(31,31,31) };
+    static const unsigned char grayramp[24] = { 1,2,3,5,6,7,8,9,11,12,13,14,16,17,18,19,20,22,23,24,25,27,28,29 };
+    static const unsigned char colorramp[6] = { 0,12,16,21,26,31 };
+    for(unsigned n=0; n<216; ++n) { xterm256table[16+n]  = Make(colorramp[(n/36)%6], colorramp[(n/6)%6], colorramp[(n)%6]); }
+    for(unsigned n=0; n<24; ++n)  { xterm256table[232+n] = Make(grayramp[n],grayramp[n],grayramp[n]); }
+    
+#### Font
+
+In 8x16, 8x14 and 8x8 modes (and 9x16, 9x14, 9x8),
+the font is whatever the host computer VGA BIOS has in it.
+The editor does not *have* a font for these modes.
+It is assumed that there is *a* font. This assumption is true.
+
+In 8x15, 8x10, 8x12, 4x8, 8x19 and 8x32 modes, the editor
+supplies its own font which is mostly created algorithmically
+from the standard IBM PC font by up-/downscaling.
+You can find these fonts in the `.inc` files in this repository.
+No, these are not Windows font files.
+This is not a Windows program to begin with.
+
+### Temperature
+
+The temperature information is flavor.
+It is hardcoded text in the editor.
+No automatic measurement is performed.
+
+### CPU speed
+
+The editor measures the CPU speed periodically while it runs.
+If run in DOSBox, it also *changes* the CPU speed constantly.
+The CPU speed is throttled depending how long it takes for the
+syntax highlighting to finish after an edit.
+
+### Person animation
+
+The ~~Mario~~ person animation at the top uses the same principle
+that Norton tools used on DOS in order to render a graphical mouse cursor in text mode.
+
+![Norton Defrag](pic/norton.png)
 
 It reads the font for those characters that are currently under Mario,
 treats those characters as bitmaps, adds Mario into them,
@@ -147,3 +274,5 @@ After all I only ever use this editor for the videos.
 And in those videos, I only need very basic set of features.
 Look at the `doc/` directory for details.
 
+Again I remind that this editor was not designed to be used by people.
+It was designed to *look* like it’s being used by people.
