@@ -2,7 +2,7 @@ CXX=i586-pc-msdosdjgpp-g++
 CXXFLAGS=-Ofast -g -flto
 CPPFLAGS=-std=gnu++17 -Wall -Wextra
 
-e.exe: main.cc jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh vec_sp.hh cpu.h
+e.exe: main.cc jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh vec_sp.hh cpu.h kbhit.hh
 	$(CXX) -o $@ $< $(CXXFLAGS) $(CPPFLAGS) $(LDFLAGS) $(LDLIBS)
 
 # To install DJGPP on Debian:
