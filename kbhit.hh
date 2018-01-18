@@ -1,3 +1,8 @@
+#ifdef __GNUC__
+# define cdecl
+# define register
+#endif
+
 #ifdef __BORLANDC__
 # include <dos.h> // for MK_FP
 # include <conio.h>
@@ -27,10 +32,9 @@ static int MyGetch()
 
 #else
 
-#define cdecl
-#define register
 
 #ifdef __DJGPP__
+# include <dos.h>
 
 static unsigned char KbStatus = 0;
 static int MyKbhit()

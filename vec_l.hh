@@ -4,19 +4,10 @@
 
 /* Vector of unsigned long */
 
-#ifdef __GNUC__
- #include <vector>
- using LongVecType = std::vector<unsigned long>;
-#else
-
-
 #define T       unsigned long
 #define VecType LongVecType
 #include "vecbase.hh"
 #undef VecType
 #undef T
-
-
-#endif
 
 #endif

@@ -4,17 +4,10 @@
 
 /* Vector of unsigned short */
 
-#ifdef __GNUC__
- #include <vector>
- using WordVecType = std::vector<unsigned short>;
-#else
-
 #define T       unsigned short
 #define VecType WordVecType
 #include "vecbase.hh"
 #undef VecType
 #undef T
-
-#endif
 
 #endif

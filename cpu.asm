@@ -72,7 +72,24 @@ public @CPUinfo
 	 fdivp st(1), st
 	pop di
 	pop si
+IFDEF   __LARGE__               ; Large Code - Large Data
+        retf
+ELSE
+IFDEF   __MEDIUM__
+	retf
+ELSE
+IFDEF   __HUGE__
+	retf
+ELSE
 	ret
+ENDIF
+ELSE
+	ret
+ENDIF
+ELSE
+	ret
+ENDIF
+
 
 TempIrq0:
 	inc dword ptr cs:[mycount]

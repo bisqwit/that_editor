@@ -10,10 +10,25 @@ rem bcc -S -3 -ff -k- -w -w-sig -w-inl -P -d -a -O -mc -I../include -L../lib mai
 rem del e.exe
 rem main.exe e.exe
 
-bcc -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include main.cc
-tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 main.asm,main.obj
-tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 cpu.asm,cpu.obj
-tlink /3 /m /P=65536 /yx+ ..\lib\c0c.obj main.obj cpu.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
+REM COMPACT MODEL:
+REM d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include vga.cc
+REM d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include mario.cc
+REM d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include main.cc
+REM d:\editor\bin\tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 main.asm,main.obj
+REM d:\editor\bin\tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 mario.asm,mario.obj
+REM d:\editor\bin\tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 vga.asm,vga.obj
+REM d:\editor\bin\tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 cpu.asm,cpu.obj
+REM d:\editor\bin\tlink /3 /m /P=65536 /c ..\lib\c0c.obj main.obj mario.obj vga.obj cpu.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
+
+REM LARGE MODEL:
+d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -ml -I..\include vga.cc
+d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -ml -I..\include mario.cc
+d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -ml -I..\include main.cc
+d:\editor\bin\tasm /D__LARGE__ /D__CDECL__ /r /ml /m9 main.asm,main.obj
+d:\editor\bin\tasm /D__LARGE__ /D__CDECL__ /r /ml /m9 mario.asm,mario.obj
+d:\editor\bin\tasm /D__LARGE__ /D__CDECL__ /r /ml /m9 vga.asm,vga.obj
+d:\editor\bin\tasm /D__LARGE__ /D__CDECL__ /r /ml /m9 cpu.asm,cpu.obj
+d:\editor\bin\tlink /3 /m /P=65536 /c ..\lib\c0l.obj main.obj mario.obj vga.obj cpu.obj, e.exe,,..\lib\cl.lib ..\lib\mathl.lib ..\lib\fp87.lib
 
 REM Compact model, i.e. 32-bit data pointers but 16-bit code pointers
 

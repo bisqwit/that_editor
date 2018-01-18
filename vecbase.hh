@@ -1,4 +1,19 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
+/* A std::vector replacement for pre-standard compilers
+ * that do not support templates at all.
+ *
+ * #defines to add before #include:  T       = element type
+ *                                   VecType = name of the vector class type to define
+ *                                   UsePlacementNew = if #defined, call Construct() -- When T is another vector type.
+ */
+
+#if defined(__cplusplus) && __cplusplus >= 199711L
+
+#include <vector>
+typedef std::vector<T> VecType;
+
+#else
+
 #ifndef vecBaseIncludes
 # define vecBaseIncludes
 # include <stdlib.h>
@@ -63,7 +78,7 @@ public:
             copy_construct(&data[0], &b.data[0], len);
         }
     }
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if defined(__cplusplus) && __cplusplus >= 201100L
     VecType(VecType&& b): data(b.data), len(b.len), cap(b.cap)
     {
         b.data = 0;
@@ -88,7 +103,7 @@ public:
         len = b.len;
         return *this;
     }
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if defined(__cplusplus) && __cplusplus >= 201100L
     VecType& operator= (VecType&& b)
     {
         if(&b != this) swap(b);
@@ -547,7 +562,7 @@ private:
     }
     static void move_assign(T * target, T * source, size_type count)
     {
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if defined(__cplusplus) && __cplusplus >= 201100L
         for(size_type a=0; a<count; ++a)
             target[a] = std::move(source[a]);
 #else
@@ -561,7 +576,7 @@ private:
     }
     static void move_assign_backwards(T * target, T * source, size_type count)
     {
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if defined(__cplusplus) && __cplusplus >= 201100L
         for(size_type a=count; a-- > 0; )
             target[a] = std::move(source[a]);
 #else
@@ -575,7 +590,7 @@ private:
     }
     static void move_construct(T * target, T * source, size_type count)
     {
-#ifdef __GXX_EXPERIMENTAL_CXX0X__
+#if defined(__cplusplus) && __cplusplus >= 201100L
         for(size_type a=0; a<count; ++a)
             new(&target[a]) T( std::move(source[a]) );
 #else
@@ -638,3 +653,6 @@ private:
 
 #undef Ttype
 };
+
+#endif
+

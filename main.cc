@@ -5,6 +5,18 @@
 #include <time.h>
 #include <ctype.h>
 
+#include "langdefs.hh"
+#include "kbhit.hh"
+
+#include "vec_c.hh"
+#include "vec_s.hh"
+#include "vec_lp.hh"
+
+#include "jsf.hh"
+#include "vga.hh"
+
+#include "cpu.h"
+
 #ifdef __BORLANDC__
 # include <process.h> // For Cycles adjust on DOSBOX
 #endif
@@ -15,13 +27,12 @@
 
 #define CTRL(c) ((c) & 0x1F)
 
-static const int ENABLE_DRAG = 0;
+static const bool ENABLE_DRAG = false;
 
-volatile unsigned long MarioTimer = 0;
 static unsigned long chars_file  = 0;
 static unsigned long chars_typed = 0;
 
-static int use9bit, dblw, dblh, columns=1;
+static bool use9bit=false, dblw=false, dblh=false;
 
 static inline int isalnum_(unsigned char c)
 {
@@ -45,17 +56,6 @@ const char* fnpart(const char* fn)
     return fn;
 }
 
-#include "kbhit.hh"
-
-#include "vec_c.hh"
-#include "vec_s.hh"
-#include "vec_lp.hh"
-
-#include "jsf.hh"
-#include "vga.hh"
-
-#include "cpu.h"
-
 const unsigned UnknownColor = 0x2400;
 
 char StatusLine[256] = // WARNING: Not range-checked
@@ -69,21 +69,21 @@ struct Anchor
     Anchor() : x(0), y(0) { }
 };
 
-JSF     Syntax;
-
 enum { MaxSavedCursors = 4, NumCursors = MaxSavedCursors + 2 };
 
 Anchor Win, SavedCursors[NumCursors];
 
-int     InsertMode=1, WaitingCtrl=0, CurrentCursor=0;
-unsigned TabSize  =4;
+bool          InsertMode   =true;
+char          WaitingCtrl  =0;
+unsigned char CurrentCursor=0;
+unsigned char TabSize      =4;
 
 #define Cur        SavedCursors[CurrentCursor]
 #define BlockBegin SavedCursors[MaxSavedCursors  ]
 #define BlockEnd   SavedCursors[MaxSavedCursors+1]
 
-int UnsavedChanges = 0;
-char* CurrentFileName = 0;
+bool  UnsavedChanges  = false;
+char* CurrentFileName = nullptr;
 
 void FileLoad(const char* fn)
 {
@@ -144,7 +144,7 @@ void FileLoad(const char* fn)
     }
     fclose(fp);
     Win = Cur = Anchor();
-    UnsavedChanges = 0;
+    UnsavedChanges = false;
 
     chars_file = 0;
     for(size_t a=0; a<EditLines.size(); ++a)
@@ -166,7 +166,7 @@ void FileNew()
 }
 struct ApplyEngine: public JSF::Applier
 {
-    int finished;
+    bool finished;
     unsigned nlinestotal, nlines;
     size_t x,y, begin_line;
     unsigned pending_recolor_distance, pending_recolor;
@@ -174,7 +174,7 @@ struct ApplyEngine: public JSF::Applier
     ApplyEngine()
         { Reset(0); }
     void Reset(size_t line)
-        { x=0; y=begin_line=line; finished=0; nlinestotal=nlines=0;
+        { x=0; y=begin_line=line; finished=false; nlinestotal=nlines=0;
           pending_recolor=0;
           pending_attr   =0;
         }
@@ -182,7 +182,7 @@ struct ApplyEngine: public JSF::Applier
     {
         if(y >= EditLines.size() || EditLines[y].empty())
         {
-            finished = 1;
+            finished = true;
             FlushColor();
             return -1;
         }
@@ -268,7 +268,7 @@ void VisSoftCursor(int mode)
      *   1 = screen contents have changed
      *  -1 = request undo the cursor at current location
      */
-    static unsigned short* cursor_location = 0;
+    static unsigned short* cursor_location = nullptr;
     static unsigned evacuation = 0;
 
     // *READ* hardware cursor position from screen */
@@ -792,6 +792,7 @@ enum SyntaxCheckingType
     SyntaxChecking_DoingFull = 3
 } SyntaxCheckingNeeded = SyntaxChecking_DoingFull;
 
+JSF             Syntax;
 JSF::ApplyState SyntaxCheckingState;
 ApplyEngine     SyntaxCheckingApplier;
 
@@ -803,7 +804,7 @@ ApplyEngine     SyntaxCheckingApplier;
 // How many lines to backtrack
 #define SyntaxChecking_ContextOffset 50
 
-void WaitInput(int may_redraw = 1)
+void WaitInput(bool may_redraw = true)
 {
     if(may_redraw)
     {
@@ -824,7 +825,7 @@ void WaitInput(int may_redraw = 1)
     while(Cur.x < Win.x)         Win.x -= 8;
     while(Cur.x >= Win.x + VidW) Win.x += 8;
 
-    int needs_redraw = 0;
+    bool needs_redraw = false;
 
     // If the window position has changed from last update,
     // hide the software cursor and replace the hardware cursor
@@ -834,7 +835,7 @@ void WaitInput(int may_redraw = 1)
         VisSetCursor();
         // Delay the screen refreshing though,
         // so we only do it once
-        needs_redraw = 1;
+        needs_redraw = true;
     }
 
     while(!kbhit())
@@ -843,7 +844,7 @@ void WaitInput(int may_redraw = 1)
         {
             if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
             {
-                int horrible_sight =
+                bool horrible_sight =
                     (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
                     (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
                 /* If the sight on the very screen currently
@@ -878,11 +879,11 @@ void WaitInput(int may_redraw = 1)
                         : SyntaxChecking_DoingFull;
 
                 // Something was changed, so refresh screen now
-                needs_redraw = 1;
+                needs_redraw = true;
             }
             // In any case, refresh screen if _something_ changed
             if(needs_redraw)
-                { wx=Win.x; wy=Win.y; VisRender(); needs_redraw = 0; }
+                { wx=Win.x; wy=Win.y; VisRender(); needs_redraw = false; }
         }
         VisRenderTitleAndStatus();
         VisSoftCursor(0);
@@ -917,7 +918,7 @@ UndoEvent UndoQueue[MaxUndo];
 UndoEvent RedoQueue[MaxUndo];
 unsigned  UndoHead = 0, RedoHead = 0;
 unsigned  UndoTail = 0, RedoTail = 0;
-char      UndoAppendOk = 0;
+bool      UndoAppendOk = false;
 void AddUndo(const UndoEvent& event)
 {
     unsigned UndoBufSize = (UndoHead + MaxUndo - UndoTail) % MaxUndo;
@@ -989,7 +990,7 @@ void PerformEdit(
     if(DoingUndo)
     {
         int s = sprintf(StatusLine,"Edit%u @%u,%u: Delete %u, insert '",
-        UndoAppendOk, x,y,n_delete);
+                                   int(UndoAppendOk), x,y,n_delete);
         for(unsigned b=insert_chars.size(), a=0; a<b && s<252; ++a)
         {
             char c = insert_chars[a] & 0xFF;
@@ -1122,7 +1123,7 @@ void PerformEdit(
             break;
     }
 
-    UnsavedChanges = 1;
+    UnsavedChanges = true;
 }
 
 void TryUndo()
@@ -1281,8 +1282,8 @@ int SelectFont()
     unsigned curh = VidH * VidCellHeight                        ;// * (1+dblh);
 
     const unsigned noptions = sizeof(options) / sizeof(*options);
-    unsigned char wdblset[5] = { (unsigned char)dblw, (unsigned char)dblw, (unsigned char)!dblw, (unsigned char)dblw, (unsigned char)!dblw };
-    unsigned char hdblset[5] = { (unsigned char)dblh, (unsigned char)dblh, (unsigned char)dblh, (unsigned char)!dblh, (unsigned char)!dblh };
+    bool wdblset[5] = { dblw, dblw, !dblw, dblw, !dblw };
+    bool hdblset[5] = { dblh, dblh, dblh, !dblh, !dblh };
     signed int maxwidth[5] = { 0,0,0,0,0 };
     for(unsigned n=0; n<noptions; ++n)
     {
@@ -1383,7 +1384,7 @@ int SelectFont()
             p[m+(DOSBOX_HICOLOR_OFFSET/2)] = 0;
         }
     rewait:
-        WaitInput(0);
+        WaitInput(false);
         unsigned c = getch();
         if(c == 27 || c == 3)
             { gotesc:
@@ -1430,7 +1431,7 @@ int SelectFont()
     VidH          = options[sel_y].h[sel_x];
     use9bit = (options[sel_y].px == 9) || (options[sel_y].px == 18);
     FatMode = options[sel_y].px >= 16;
-    if(VidCellHeight != 8) DCPUpalette = 0;
+    if(VidCellHeight != 8) DCPUpalette = false;
     return 1;
 }
 
@@ -1444,7 +1445,7 @@ int VerifyUnsavedExit(const char* action)
     int decision = 0;
     for(;;)
     {
-        WaitInput(1);
+        WaitInput(true);
         int c = getch();
         if(c == 'Y' || c == 'y') { decision=1; break; }
         if(c == CTRL('C')
@@ -1568,7 +1569,7 @@ void InvokeSave(int ask_name)
     fclose(fp);
     sprintf(StatusLine, "Saved %lu bytes to %s", size, CurrentFileName);
     VisRenderTitleAndStatus();
-    UnsavedChanges = 0;
+    UnsavedChanges = false;
 }
 void InvokeLoad()
 {
@@ -1589,7 +1590,7 @@ void InvokeLoad()
     SyntaxCheckingNeeded = SyntaxChecking_DoingFull;
     UndoHead=UndoTail=0;
     RedoHead=RedoTail=0;
-    UndoAppendOk=0;
+    UndoAppendOk=false;
 }
 void LineAskGo() // Go to line
 {
@@ -1705,11 +1706,6 @@ static void k_ctrlright(void)
 
 int main(int argc, char**argv)
 {
-  #if 1
-    // Set mode (for dosbox recording)
-    //VgaSetCustomMode(80,50,16,1,0,0, 2); columns = 2;
-  #endif
-
 #ifdef __DJGPP__
     __djgpp_nearptr_enable();
 #endif
@@ -1770,7 +1766,7 @@ int main(int argc, char**argv)
         int dragalong=0;
 
         unsigned /*DimX = VidW,*/ DimY = VidH-1;
-        char WasAppend = 0;
+        bool WasAppend = false;
         chars_typed += 1;
         switch(c)
         {
@@ -2035,7 +2031,7 @@ int main(int argc, char**argv)
                         if(Cur.x > eol_x) { Cur.x = eol_x; break; } // just do end-key
                         LongVecType empty;
                         PerformEdit(Cur.x,Cur.y, 1u, empty);
-                        WasAppend = 1;
+                        WasAppend = true;
                         break;
                     }
                     case 0x54: shiftF1:
@@ -2047,20 +2043,20 @@ int main(int argc, char**argv)
                     case 0x3E: VidW += 2; goto newmode; // F4
                     case 0x3F: use9bit = !use9bit; goto newmode; // F5
                     case 0x40: if(shift) goto shiftF6;
-                        if(dblw) { dblw=0; VidW*=2; }
-                        else     { dblw=1; VidW/=2; VidW&=~1; }
+                        if(dblw) { dblw=false; VidW*=2; }
+                        else     { dblw=true;  VidW/=2; VidW&=~1; }
                         goto newmode; // F6
                     case 0x59: shiftF6:
                                dblw = !dblw; goto newmode; // shift-F6
                     case 0x41: if(shift) goto shiftF7;
-                        if(dblh) { dblh=0; if(VidCellHeight==8 || VidCellHeight==16)
-                                               VidCellHeight *= 2;
-                                           else
-                                               VidH*=2; }
-                        else    { dblh=1; if(VidCellHeight==16 || (VidCellHeight==32 && !FatMode))
-                                               VidCellHeight /= 2;
-                                           else
-                                               VidH/=2; }
+                        if(dblh) { dblh=false; if(VidCellHeight==8 || VidCellHeight==16)
+                                                   VidCellHeight *= 2;
+                                               else
+                                                   VidH*=2; }
+                        else    { dblh=true; if(VidCellHeight==16 || (VidCellHeight==32 && !FatMode))
+                                                   VidCellHeight /= 2;
+                                               else
+                                                   VidH/=2; }
                         goto newmode; // F7
                     case 0x5A: shiftF7:
                                dblh = !dblh; goto newmode; // shift-F7
@@ -2074,7 +2070,7 @@ int main(int argc, char**argv)
                             if(VidH > 127) VidH = 127;
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                              use9bit, dblw, dblh,
-                                             columns);
+                                             1);
                             char FPSstr[64] = "";
                             if(VidW >= 40)
                             {
@@ -2089,8 +2085,8 @@ int main(int argc, char**argv)
                                     VidW < 44 ? "w/" : "with",
                                     (use9bit ? 9 : 8) * (FatMode?2:1),
                                     VidCellHeight,
-                                    VidW * (use9bit ? 9 : 8) * (1+dblw) * (FatMode?2:1),
-                                    VidH * VidCellHeight * (1+dblh),
+                                    VidW * (use9bit ? 9 : 8) * (1+int(dblw)) * (FatMode?2:1),
+                                    VidH * VidCellHeight * (1+int(dblh)),
                                     FPSstr);
                         }
                         VisSetCursor();
@@ -2107,8 +2103,8 @@ int main(int argc, char**argv)
                         break;
                     case 0x43: // F9
                         C64palette = !C64palette;
-                        DispUcase = C64palette;
-                        if(C64palette) use9bit = 0;
+                        DispUcase  = C64palette;
+                        if(C64palette) use9bit = false;
                         goto newmode;
                     case 0x44: // F10
                         DispUcase = !DispUcase;
@@ -2161,7 +2157,7 @@ int main(int argc, char**argv)
                     }
                     PerformEdit(Cur.x,Cur.y, 1u, empty);
                 }
-                WasAppend = 1;
+                WasAppend = true;
                 break;
             }
             case CTRL('D'):
@@ -2188,14 +2184,14 @@ int main(int argc, char**argv)
                 txtbuf[0] = 0x070A; // newline
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
                 //Win.x = 0;
-                WasAppend = 1;
+                WasAppend = true;
                 break;
             }
             default:
             {
                 LongVecType txtbuf(1, 0x0700 | c);
                 PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
-                WasAppend = 1;
+                WasAppend = true;
                 break;
             }
         }
@@ -2216,13 +2212,13 @@ int main(int argc, char**argv)
         }
     }
 exit:;
-    Cur.x = 0; Cur.y = Win.y + VidH-2; InsertMode = 1;
+    Cur.x = 0; Cur.y = Win.y + VidH-2; InsertMode = true;
     if(FatMode || C64palette)
     {
-        FatMode=0;
-        C64palette=0;
+        FatMode    = false;
+        C64palette = false;
         VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                         use9bit, dblw, dblh, columns);
+                         use9bit, dblw, dblh, 1);
     }
     VisSetCursor();
 #if defined(__BORLANDC__) || defined(__DJGPP__)
