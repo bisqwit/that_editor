@@ -19,10 +19,13 @@
 
 #ifdef __BORLANDC__
 # include <process.h> // For Cycles adjust on DOSBOX
+# include <dos.h> // MK_FP, getpsp, inportb
 #endif
 #ifdef __DJGPP__
 # include <dos.h>
 # include <dpmi.h>
+# include <go32.h>
+# include <sys/farptr.h>
 #endif
 
 #define CTRL(c) ((c) & 0x1F)
@@ -329,11 +332,11 @@ void VisPutCursorAt(unsigned cx,unsigned cy)
     #ifdef __DJGPP__
     unsigned addr = cux + cuy*VidW;
     _farpokeb(_dos_ds, 0x450, (cuy<<8) + cux);
-    outport(0x3D4, 0x0E + (addr&0xFF00));
-    outport(0x3D4, 0x0F + ((addr&0xFF)<<8));
+    outportw(0x3D4, 0x0E + (addr&0xFF00));
+    outportw(0x3D4, 0x0F + ((addr&0xFF)<<8));
     // Set cursor shape: lines-4 to lines-3, or 6 to 7
-    outport(0x3D4, 0x0A + ((VidCellHeight>8 ? VidCellHeight-4 : 6) << 8));
-    outport(0x3D4, 0x0B + ((VidCellHeight>8 ? VidCellHeight-3 : 7) << 8));
+    outportw(0x3D4, 0x0A + ((VidCellHeight>8 ? VidCellHeight-4 : 6) << 8));
+    outportw(0x3D4, 0x0B + ((VidCellHeight>8 ? VidCellHeight-3 : 7) << 8));
     #else
     _asm { mov ah, 2; mov bh, 0; mov dh, cuy; mov dl, cux; int 0x10 }
     _asm { mov ah, 1; mov cx, size; int 0x10 }
@@ -1536,7 +1539,7 @@ void InvokeSave(int ask_name)
 {
     if(ask_name || !CurrentFileName)
     {
-        char* name = 0;
+        char* name = nullptr;
         int decision = PromptText("Save to:",
             CurrentFileName ? CurrentFileName : "",
             &name);
@@ -1573,7 +1576,7 @@ void InvokeSave(int ask_name)
 }
 void InvokeLoad()
 {
-    char* name = 0;
+    char* name = nullptr;
     int decision = PromptText("Load what:",
         CurrentFileName ? CurrentFileName : "",
         &name);
@@ -1595,10 +1598,10 @@ void InvokeLoad()
 void LineAskGo() // Go to line
 {
     unsigned DimY = VidH-1;
-    char* line = 0;
+    char* line = nullptr;
     char Buf[64] = "";
     //sprintf(Buf, "%u", Cur.y + 1);
-    int decision = PromptText("Goto line:", Buf, &line);
+    int decision = PromptText("Goto line:", Buf, &line); // Warning: No range checking!
     if(!decision || !line || !*line)
     {
         if(line) free(line);
@@ -1760,10 +1763,10 @@ int main(int argc, char**argv)
             VisRender();
         }
 
-        int wasbegin = Cur.x==BlockBegin.x && Cur.y==BlockBegin.y;
-        int wasend   = Cur.x==BlockEnd.x   && Cur.y==BlockEnd.y;
+        bool wasbegin = Cur.x==BlockBegin.x && Cur.y==BlockBegin.y;
+        bool wasend   = Cur.x==BlockEnd.x   && Cur.y==BlockEnd.y;
         unsigned WasX = Cur.x, WasY = Cur.y;
-        int dragalong=0;
+        bool dragalong=false;
 
         unsigned /*DimX = VidW,*/ DimY = VidH-1;
         bool WasAppend = false;
@@ -1779,7 +1782,7 @@ int main(int argc, char**argv)
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
                 /*if(Win.y + DimY > EditLines.size()
                 && EditLines.size() > DimY) Win.y = EditLines.size()-DimY;*/
-                if(shift && ENABLE_DRAG) dragalong = 1;
+                if(shift && ENABLE_DRAG) dragalong = true;
                 break;
             }
             case CTRL('U'): // ctrl-U
@@ -1788,7 +1791,7 @@ int main(int argc, char**argv)
                 unsigned offset = Cur.y - Win.y;
                 if(Cur.y > DimY) Cur.y -= DimY; else Cur.y = 0;
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
-                if(shift && ENABLE_DRAG) dragalong = 1;
+                if(shift && ENABLE_DRAG) dragalong = true;
                 break;
             }
             case CTRL('A'): goto home;
@@ -1948,51 +1951,51 @@ int main(int argc, char**argv)
                     case 'H': // up
                         if(Cur.y > 0) --Cur.y;
                         if(Cur.y < Win.y) Win.y = Cur.y;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     case 'P': // down
                         if(Cur.y+1 < EditLines.size()) ++Cur.y;
                         if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     case 0x47: // home
                     {
                     home:
                         k_home();
                         Win.x = 0;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     }
                     case 0x4F: // end
                     end:
                         k_end();
                         Win.x = 0;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     case 'K': // left
                     {
                     lt_key:
                         k_left();
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     }
                     case 'M': // right
                     {
                     rt_key:
                         k_right();
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     }
                     case 0x73: // ctrl-left (go left on word boundary)
                     {
                         k_ctrlleft();
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     }
                     case 0x74: // ctrl-right (go right on word boundary)
                     {
                         k_ctrlright();
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     }
                     case 0x49: goto pgup;
@@ -2005,7 +2008,7 @@ int main(int argc, char**argv)
                     ctrlpgup:
                         Cur.y = Win.y = 0;
                         Cur.x = Win.x = 0;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     case 0x76: // ctrl-pgdn = goto end of file
                     ctrlpgdn:
@@ -2015,11 +2018,11 @@ int main(int argc, char**argv)
                         goto end;
                     case 0x77: // ctrl-home = goto beginning of window (vertically)
                         Cur.y = Win.y;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         break;
                     case 0x75: // ctrl-end = goto end of window (vertically)
                         Cur.y = Win.y + VidH-1;
-                        if(shift && ENABLE_DRAG) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = true;
                         // Hide the status line
                         StatusLine[0] = '\0';
                         break;
@@ -2198,9 +2201,9 @@ int main(int argc, char**argv)
         UndoAppendOk = WasAppend;
         if(dragalong)
         {
-            int w=0;
-            if(wasbegin || !wasend) { BlockBegin.x=Cur.x; BlockBegin.y=Cur.y; w=1; }
-            if(!wasbegin)           { BlockEnd.x=Cur.x; BlockEnd.y=Cur.y; w=1; }
+            bool dirty=false;
+            if(wasbegin || !wasend) { BlockBegin.x=Cur.x; BlockBegin.y=Cur.y; dirty=true; }
+            if(!wasbegin)           { BlockEnd.x  =Cur.x; BlockEnd.y  =Cur.y; dirty=true; }
             if( !wasbegin && !wasend
             && BlockBegin.x==BlockEnd.x
             && BlockBegin.y==BlockEnd.y) { BlockEnd.x=WasX; BlockEnd.y=WasY; }
@@ -2208,7 +2211,7 @@ int main(int argc, char**argv)
             || (BlockBegin.y == BlockEnd.y && BlockBegin.x > BlockEnd.x))
                {{ unsigned tmp = BlockBegin.y; BlockBegin.y=BlockEnd.y; BlockEnd.y=tmp; }
                 { unsigned tmp = BlockBegin.x; BlockBegin.x=BlockEnd.x; BlockEnd.x=tmp; }}
-            if(w) VisRender();
+            if(dirty) VisRender();
         }
     }
 exit:;
@@ -2217,8 +2220,7 @@ exit:;
     {
         FatMode    = false;
         C64palette = false;
-        VgaSetCustomMode(VidW,VidH, VidCellHeight,
-                         use9bit, dblw, dblh, 1);
+        VgaSetCustomMode(VidW,VidH, VidCellHeight, use9bit, dblw, dblh, 1);
     }
     VisSetCursor();
 #if defined(__BORLANDC__) || defined(__DJGPP__)

@@ -1,32 +1,14 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include "langdefs.hh"
-#ifdef __BORLANDC__
-# include <dos.h>
-#endif
 
 #ifdef __BORLANDC__
+
 extern unsigned short* VidMem;
-#define Pokeb(seg,ofs,v) *(unsigned char*)MK_FP(seg,ofs) = (v)
-#define Pokew(seg,ofs,v) *(unsigned short*)MK_FP(seg,ofs) = (v)
-#define Pokel(seg,ofs,v) *(unsigned long*)MK_FP(seg,ofs) = (v)
-#define Peekb(seg,ofs) *(const unsigned char*)MK_FP(seg,ofs)
-#define Peekw(seg,ofs) *(const unsigned short*)MK_FP(seg,ofs)
-#define Peekl(seg,ofs) *(const unsigned long*)MK_FP(seg,ofs)
 
 #elif defined(__DJGPP__)
 
-#include <go32.h>
-#include <sys/farptr.h>
 #include <sys/nearptr.h>
-// In order to access BIOS timer and VGA memory:
 #define VidMem (reinterpret_cast<unsigned short*>(__djgpp_conventional_base + 0xB8000))
-#define Pokeb(seg,ofs,v) _farpokeb(_dos_ds, (seg)*0x10+(ofs), (v))
-#define Pokew(seg,ofs,v) _farpokew(_dos_ds, (seg)*0x10+(ofs), (v))
-#define Pokel(seg,ofs,v) _farpokel(_dos_ds, (seg)*0x10+(ofs), (v))
-#define Peekb(seg,ofs) _farpeekb(_dos_ds, (seg)*0x10+(ofs))
-#define Peekw(seg,ofs) _farpeekw(_dos_ds, (seg)*0x10+(ofs))
-#define Peekl(seg,ofs) _farpeekl(_dos_ds, (seg)*0x10+(ofs))
-#define outport(r,b) outportw(r,b)
 
 #else
 static unsigned short VidMem[256*256];

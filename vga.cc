@@ -13,6 +13,31 @@ unsigned short* VidMem = ((unsigned short *) MK_FP(0xB000, 0x8000));
 # include <dpmi.h>
 #endif
 
+#ifdef __BORLANDC__
+#define Pokeb(seg,ofs,v) *(unsigned char*)MK_FP(seg,ofs) = (v)
+#define Pokew(seg,ofs,v) *(unsigned short*)MK_FP(seg,ofs) = (v)
+#define Pokel(seg,ofs,v) *(unsigned long*)MK_FP(seg,ofs) = (v)
+#define Peekb(seg,ofs) *(const unsigned char*)MK_FP(seg,ofs)
+#define Peekw(seg,ofs) *(const unsigned short*)MK_FP(seg,ofs)
+#define Peekl(seg,ofs) *(const unsigned long*)MK_FP(seg,ofs)
+
+#elif defined(__DJGPP__)
+
+#include <go32.h>
+#include <sys/farptr.h>
+#include <sys/nearptr.h>
+// In order to access BIOS timer and VGA memory:
+#define VidMem (reinterpret_cast<unsigned short*>(__djgpp_conventional_base + 0xB8000))
+#define Pokeb(seg,ofs,v) _farpokeb(_dos_ds, (seg)*0x10+(ofs), (v))
+#define Pokew(seg,ofs,v) _farpokew(_dos_ds, (seg)*0x10+(ofs), (v))
+#define Pokel(seg,ofs,v) _farpokel(_dos_ds, (seg)*0x10+(ofs), (v))
+#define Peekb(seg,ofs) _farpeekb(_dos_ds, (seg)*0x10+(ofs))
+#define Peekw(seg,ofs) _farpeekw(_dos_ds, (seg)*0x10+(ofs))
+#define Peekl(seg,ofs) _farpeekl(_dos_ds, (seg)*0x10+(ofs))
+#define outport(r,b) outportw(r,b)
+
+#endif
+
 //#ifdef __DJGPP__
 //_go32_dpmi_seginfo font_memory_buffer{};
 //#endif
@@ -236,7 +261,6 @@ void VgaSetMode(unsigned modeno)
     if(C64palette) extra_pal = c64pal;
     if(DCPUpalette) extra_pal = dcpu16pal;
     #if 0
-    #endif
     static const unsigned long primerpal[16] =
     {
         0x000000ul,0x00005Ful,0x68A141ul,0x7ABFC7ul,
@@ -245,6 +269,7 @@ void VgaSetMode(unsigned modeno)
         0xFFAF5Ful,0xAF5FFFul,0xFFFFAFul,0xFFFFFFul
     };
     //extra_pal = primerpal; // Special Primer version
+    #endif
     #if 0
     static const unsigned long replacementpal_test[16] =
     {

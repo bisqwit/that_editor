@@ -1,7 +1,8 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
+#include "langdefs.hh"
 #include <string.h>
 
-#ifdef __GNUC__
+#if defined(__cplusplus) && __cplusplus >= 199700L
 # include <algorithm>
 # include <vector>
 #endif
@@ -9,7 +10,7 @@
 class JSF
 {
 public:
-    JSF() : states(0)
+    JSF() : states(nullptr)
     {
     }
     void Parse(const char* fn)
@@ -24,14 +25,14 @@ public:
         char Buf[512]={0};
         //fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
         TabType colortable;
-        char colors_sorted = 0;
-        states = 0; // NOTE: THIS LEAKS MEMORY
+        bool colors_sorted = false;
+        states = nullptr; // NOTE: THIS LEAKS MEMORY
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
             if(Buf[0] == '=')
             {
-                colors_sorted = 0;
+                colors_sorted = false;
                 ParseColorDeclaration(Buf+1, colortable);
             }
             else if(Buf[0] == ':')
@@ -40,7 +41,7 @@ public:
                 {
                     /* Sort the color table when the first state is encountered */
                     sort(colortable);
-                    colors_sorted = 1;
+                    colors_sorted = true;
                 }
                 ParseStateStart(Buf+1, colortable);
             }
@@ -156,7 +157,7 @@ private:
             char*  state_name;
         };
 
-        inline void Construct() { token=0; state=0; }
+        inline void Construct() { token=nullptr; state=nullptr; }
         inline void Construct(const table_item& b) { token=b.token; state=b.state; }
         inline void Destruct() { }
         inline void swap(table_item& b)
@@ -165,11 +166,12 @@ private:
             t = token;      token     =b.token;      b.token     =t;
             t = state_name; state_name=b.state_name; b.state_name=t;
         }
+#ifndef __BORLANDC__
+        table_item() : token(nullptr), state(nullptr) {}
+        table_item(const table_item& b) : token(b.token), state(b.state) {}
+#endif
     };
     /* std::vector<table_item> without STL, for Borland C++ */
-    #ifdef __GNUC__
-    using TabType = std::vector<table_item>;
-    #else
     #define UsePlacementNew
     #define T       table_item
     #define VecType TabType
@@ -177,7 +179,6 @@ private:
     #undef VecType
     #undef T
     #undef UsePlacementNew
-    #endif
 
     struct option
     {
@@ -571,7 +572,7 @@ private:
         }
     }
 
-    #ifndef __GNUC__
+    #if !(defined(__cplusplus) && __cplusplus >= 199700L)
     static int TableItemCompareForSort(const void * a, const void * b)
     {
         table_item * aa = (table_item *)a;
@@ -592,7 +593,7 @@ private:
             tab[i] = k;
         }
         */
-        #ifdef __GNUC__
+        #if defined(__cplusplus) && __cplusplus >= 199700L
         std::sort(tab.begin(), tab.end(), [&](table_item& a, table_item& b)
                                           { return strcmp(a.token, b.token) < 0; });
         #else

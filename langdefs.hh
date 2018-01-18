@@ -2,7 +2,8 @@
 # define cdecl
 # define register
 #else
-# define bool  int
+typedef signed char Schar;
+# define bool  Schar
 # define false 0
 # define true  1
 # define nullptr ((void*)0)

@@ -4,7 +4,7 @@ CPPFLAGS=-std=gnu++17 -Wall -Wextra
 
 INCLUDES=jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh vec_sp.hh cpu.h kbhit.hh vecbase.hh
 
-OBJS=main.o mario.o vga.o
+OBJS=main.o mario.o vga.o kbhit.o
 
 #CXXFLAGS += -fsanitize=address
 
