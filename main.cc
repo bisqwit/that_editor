@@ -58,7 +58,7 @@ const char* fnpart(const char* fn)
 
 const unsigned UnknownColor = 0x2400;
 
-char StatusLine[256] =
+char StatusLine[256] = // WARNING: Not range-checked
 "Ad-hoc programming editor - (C) 2011-03-08 Joel Yliluoma";
 
 LongPtrVecType EditLines;
@@ -85,7 +85,7 @@ unsigned TabSize  =4;
 int UnsavedChanges = 0;
 char* CurrentFileName = 0;
 
-void FileLoad(char* fn)
+void FileLoad(const char* fn)
 {
     fprintf(stderr, "Loading '%s'...\n", fn);
     FILE* fp = fopen(fn, "rb");
@@ -258,9 +258,10 @@ private:
 
 unsigned CursorCounter = 0;
 
+/* SoftCursor is only used in the C64 simulation mode. */
 void VisSoftCursor(int mode)
 {
-    if(!C64palette) return;
+    if(!C64palette) return; // Don't do anything if C64palette is not activated.
 
     /* Modes:
      *   0 = blink ticker (100 Hz)
@@ -270,12 +271,14 @@ void VisSoftCursor(int mode)
     static unsigned short* cursor_location = 0;
     static unsigned evacuation = 0;
 
+    // *READ* hardware cursor position from screen */
     unsigned char cux=0, cuy=0;
 #ifdef __BORLANDC__
     _asm { mov ah, 3; mov bh, 0; int 0x10; mov cux, dl; mov cuy, dh; xchg cx,cx }
 #elif defined(__DJGPP__)
     { REGS r{}; r.h.ah = 3; r.h.bh = 0; int86(0x10, &r, &r); cux = r.h.dl; cuy = r.h.dh; }
 #endif
+    // Get the corresponding location in the video memory
     unsigned short* now_location = GetVidMem(cux,cuy); //VidMem + cux + cuy * unsigned(VidW + C64palette*4);
 
     if(mode == 1) // screen redrawn
@@ -302,7 +305,7 @@ void VisSoftCursor(int mode)
             [[fallthrough]];
             #endif
         case 0:
-            *cursor_location = ((evacuation&0xF00)<<4)|evacuation;
+            *cursor_location = ((evacuation&0xF00) << 4) | evacuation;
             break;
         case 30:
             *cursor_location = evacuation;
@@ -474,150 +477,23 @@ static const unsigned short slide2_positions[35] = {0u,440u,1247u,2126u,3006u,38
 static ColorSlideCache slide1(slide1_colors, slide1_positions, sizeof(slide1_colors));
 static ColorSlideCache slide2(slide2_colors, slide2_positions, sizeof(slide2_colors));
 
-void VisRenderStatus()
+/* Renders status-bar on screen, if non-empty. */
+static void VisRenderStatusLine()
 {
-    static unsigned long LastMarioTimer = 0xFFFFFFFFul;
-    if(MarioTimer == LastMarioTimer) return;
-    LastMarioTimer = MarioTimer;
-
-    unsigned StatusWidth = VidW*columns;
-
-    //LongVecType Hdr(StatusWidth*2);
-    static LongVecType Hdr(512);
+    // Only render Statusline if non-empty
+    if(!StatusLine[0]) return;
 
     unsigned short* Stat = GetVidMem(0, (VidH-1) / columns, 1);
 
-    time_t t = time(0);
-    struct tm* tm = localtime(&t);
-    /*
-    static unsigned long begintime = *(unsigned long*)MK_FP(0x40,0x6C);
-    unsigned long nowtime          = *(unsigned long*)MK_FP(0x40,0x6C);
-    unsigned long time = (47*60+11) - 759 + (nowtime-begintime)*(65536.0/0x1234DC);
-    tm->tm_hour = 18;
-    tm->tm_min  = time/60;
-    tm->tm_sec  = time%60;
-    */
+    const unsigned StatusWidth = VidW*columns;
 
-    // LEFT-size parts
-    char Part1[64]; sprintf(Part1, fnpart(CurrentFileName));
-    char Part2[64]; sprintf(Part2, "Row %-5u/%u Col %u",
-        (unsigned) (Cur.y+1),
-        (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
-        (unsigned) (Cur.x+1));
-
-    // RIGHT-side parts
-    char Part3[16]; sprintf(Part3, "%02d:%02d:%02d",
-        tm->tm_hour,tm->tm_min,tm->tm_sec);
-    char Part4[32]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed);
-    static const char Part5[] = "-4.2øC"; // temperature degC degrees celsius
-
-    // Because running CPUinfo() interferes with our PIT clock,
-    // only run the CPU speed check maybe twice in a second.
-    static double cpuspeed = 12345678.90123;
-    static unsigned long last_check_when = 0;
-    #ifdef __BORLANDC__
-    unsigned long now_when = (*(unsigned long*)MK_FP(0x40,0x6C)) & ~7ul;
-    #elif defined(__DJGPP__)
-    unsigned long now_when = _farpeekl(_dos_ds, 0x46C) & ~7ul;
-    #else
-    unsigned long now_when = 0;
-    #endif
-    if(last_check_when != now_when)
+    slide2.SetWidth(StatusWidth);
+    for(unsigned p=0,x=0; x<StatusWidth; ++x)
     {
-        cpuspeed = CPUinfo();
-        FixMarioTimer();
-        last_check_when = now_when;
-        Cycles_Check();
-    }
-    char Part6[32];
-    if(cpuspeed >= 1e9)
-        sprintf(Part6, "%1d.%1d GHz",
-            (int)(cpuspeed * 1e-9),
-            (int)(cpuspeed * 1e-8) % 10
-        );
-    else
-        sprintf(Part6, "%3d MHz", (int)(cpuspeed * 1e-6));
-
-    const char* Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
-    const char Prio[6]   = {10,    13,  7,    4,    0,    2    };
-    enum { NumParts = sizeof(Parts) / sizeof(*Parts) };
-
-    static unsigned left_parts  = 0;
-    static unsigned right_parts = 0;
-    static unsigned last_check_width = 0;
-    if(last_check_width != StatusWidth)
-    {
-        // When video width changes, determine which parts we can fit on the screen
-        unsigned columns_remaining = StatusWidth - 8;
-        last_check_width = StatusWidth;
-        unsigned lengths[NumParts];
-        for(unsigned n=0; n<6; ++n) lengths[n] = strlen(Parts[n]);
-        left_parts  = 1;
-        right_parts = 0;
-        unsigned best_length = 0, best_prio = 0;
-        for(unsigned combination = 0; combination < (1 << NumParts); ++combination)
-        {
-            unsigned length = 0, prio = 0;
-            for(unsigned n=0; n<NumParts; ++n)
-                if(combination & (1 << n))
-                {
-                    if(length) ++length;
-                    length += lengths[n];
-                    prio   += Prio[n];
-                }
-            if(length > columns_remaining) continue;
-            if((length+prio) > (best_length+best_prio))
-            {
-                best_length = length;
-                best_prio   = prio;
-                left_parts  = combination & 3;
-                right_parts = combination & ~3;
-            }
-        }
-    }
-
-    char Buf1[256]; Buf1[0] = '\0';
-    char Buf2[256]; Buf2[0] = '\0';
-
-    { unsigned leftn=0, leftl=0;
-      unsigned rightn=0, rightl=0;
-      // Put all left-parts in Buf1, space separated
-      // Put all right-parts in Buf2, space separated
-      for(unsigned n=0; n<NumParts; ++n)
-      {
-        unsigned bit = 1 << n;
-        if(left_parts & bit)  { if(leftn++) Buf1[leftl++] = ' ';   leftl += sprintf(Buf1+leftl, "%s", Parts[n]); }
-        if(right_parts & bit) { if(rightn++) Buf2[rightl++] = ' '; rightl += sprintf(Buf2+rightl, "%s", Parts[n]); }
-      }
-    }
-
-    unsigned x1a = 7;
-    unsigned x2a = StatusWidth-1 - strlen(Buf2);
-    if(x2a & 0x8000) x2a = x1a + strlen(Buf1) + 1;
-    unsigned x1b = x1a + strlen(Buf1);
-    unsigned x2b = x2a + strlen(Buf2);
-
-    {slide1.SetWidth(StatusWidth);
-    for(unsigned x=0; x<StatusWidth; ++x)
-    {
-        unsigned char ch, c1, c2; slide1.Get(x, ch,c1,c2);
-
+        unsigned char ch, c1, c2; slide2.Get(x, ch,c1,c2);
         if(C64palette) { c1=7; c2=0; ch = 0x20; }
-        unsigned char c = 0x20;
 
-        if(x == 0 && WaitingCtrl)
-            c = '^';
-        else if(x == 1 && WaitingCtrl)
-            c = WaitingCtrl;
-        else if(x == 3 && InsertMode)
-            c = 'I';
-        else if(x == 4 && UnsavedChanges)
-            c = '*';
-        else if(x >= x1a && x < x1b && Buf1[x-x1a] != ' ')
-            c = (unsigned char)Buf1[x-x1a];
-        else if(x >= x2a && x < x2b && Buf2[x-x2a] != ' ')
-            c = (unsigned char)Buf2[x-x2a];
-
+        unsigned char c = StatusLine[p]; if(!c) c = 0x20;
         if(c != 0x20)
         {
             ch = c; c2 = 0;
@@ -634,63 +510,216 @@ void VisRenderStatus()
         unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
 
         if(FatMode)
-            { Hdr[x+x] = colorlo; Hdr[x+x+1] = colorlo|0x80; }
+            { Stat[x+x] = colorlo; Stat[x+x+1] = colorlo|0x80; }
         else
-            Hdr[x] = colorlo | (((unsigned long)colorhi) << 16u);
-    }}
-    if(StatusLine[0])
-        {slide2.SetWidth(StatusWidth);
-        for(unsigned p=0,x=0; x<StatusWidth; ++x)
         {
-            unsigned char ch, c1, c2; slide2.Get(x, ch,c1,c2);
-            if(C64palette) { c1=7; c2=0; ch = 0x20; }
+            Stat[x] = colorlo;
+            Stat[x+(DOSBOX_HICOLOR_OFFSET/2)] = colorhi;
+        }
+        if(StatusLine[p]) ++p;
+    }
+}
 
-            unsigned char c = StatusLine[p]; if(!c) c = 0x20;
-            if(c != 0x20)
-            {
-                ch = c; c2 = 0;
-                //if(c1 == c2) c2 = 7;
-            }
-            /*if(!C64palette && c != 0x20)
-                switch(c2)
+static const char* StatusGetCPUspeed()
+{
+    // Because running CPUinfo() interferes with our PIT clock,
+    // only run the CPU speed check maybe twice in a second.
+    static double cpuspeed = 12345678.90123;
+    static unsigned long last_check_when = 0;
+    #ifdef __BORLANDC__
+    unsigned long now_when = (*(unsigned long*)MK_FP(0x40,0x6C)) & ~7ul;
+    #elif defined(__DJGPP__)
+    unsigned long now_when = _farpeekl(_dos_ds, 0x46C) & ~7ul;
+    #else
+    unsigned long now_when = 0;
+    #endif
+    static char Part6[18]; // 11+2+4+nul
+    if(last_check_when != now_when)
+    {
+        cpuspeed = CPUinfo();
+        FixMarioTimer();
+        last_check_when = now_when;
+        Cycles_Check();
+        if(cpuspeed >= 1e9)
+            sprintf(Part6, "%1d.%1d GHz",
+                (int)(cpuspeed * 1e-9),
+                (int)(cpuspeed * 1e-8) % 10
+            );
+        else
+            sprintf(Part6, "%3d MHz", (int)(cpuspeed * 1e-6));
+    }
+    return Part6;
+}
+
+static const char* StatusGetClock()
+{
+    static time_t last_t = 0;
+    time_t t = time(0);
+    static char Part3[12]; // 5+1+2+1+2+nul
+    if(!last_t || t != last_t)
+    {
+        last_t = t;
+        struct tm* tm = localtime(&t);
+        /*
+        static unsigned long begintime = *(unsigned long*)MK_FP(0x40,0x6C);
+        unsigned long nowtime          = *(unsigned long*)MK_FP(0x40,0x6C);
+        unsigned long time = (47*60+11) - 759 + (nowtime-begintime)*(65536.0/0x1234DC);
+        tm->tm_hour = 18;
+        tm->tm_min  = time/60;
+        tm->tm_sec  = time%60;
+        */
+        sprintf(Part3, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
+    }
+    return Part3;
+}
+
+
+/* VisRenderTitleAndStatus: Renders the title bar and the status bar.
+ *                  Status bar is only rendered if non-empty.
+ */
+void VisRenderTitleAndStatus()
+{
+    // Only re-render status once per frame
+    static unsigned long LastMarioTimer = 0xFFFFFFFFul;
+    if(MarioTimer == LastMarioTimer) return;
+    LastMarioTimer = MarioTimer;
+
+    unsigned StatusWidth = VidW*columns;
+
+    // LEFT-size parts
+    const char* Part1 = fnpart(CurrentFileName);
+    static char Part2[44]; sprintf(Part2, "Row %-5u/%u Col %u", // 4+11+1+11+5+11+nul
+        (unsigned) (Cur.y+1),
+        (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
+        (unsigned) (Cur.x+1));
+
+    // RIGHT-side parts
+    const char* Part3 = StatusGetClock();
+    static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
+    static const char Part5[] = "-4.2øC"; // temperature degC degrees celsius
+
+    const char* Part6 = StatusGetCPUspeed();
+
+    const unsigned NumParts = 6;
+    static const char* const Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
+    static const char Prio[6]  = {10,    13,  7,    4,    0,    2    };
+
+    unsigned Lengths[NumParts];
+    {for(unsigned n=0; n<NumParts; ++n) Lengths[n] = strlen(Parts[n]);}
+
+    // Create a plan which parts are rendered on the left side of the title bar,
+    // and which parts are rendered on the right side. Cache this plan.
+    // The plan is only updated whenever the screen width changes.
+    static unsigned left_parts  = 0, right_parts = 0, last_check_width = 0;
+    if(last_check_width != StatusWidth)
+    {
+        // When video width changes, determine which parts we can fit on the screen
+        unsigned columns_remaining = StatusWidth - 8;
+        last_check_width = StatusWidth;
+
+        // Check which combination of columns produces the best fit.
+        // Try all 2^6 = 64 combinations.
+        unsigned allowed_parts = 1, best_length = 0, best_prio = 0;
+        for(unsigned combination = 0; combination < (1 << NumParts); ++combination)
+        {
+            unsigned length = 0, prio = 0;
+            for(unsigned n=0; n<NumParts; ++n)
+                if(combination & (1 << n))
                 {
-                    case 8: c1 = 7; break;
-                    case 0: c1 = 8; break;
-                }*/
-
-            unsigned short colorlo = ch | 0x8000u | (c2 << 8u);
-            unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
-
-            if(FatMode)
-                { Stat[x+x] = colorlo; Stat[x+x+1] = colorlo|0x80; }
-            else
+                    if(length) ++length;
+                    length += Lengths[n];
+                    prio   += Prio[n];
+                }
+            if(length > columns_remaining) continue;
+            if((length+prio) > (best_length+best_prio))
             {
-                Stat[x] = colorlo;
-                Stat[x+(DOSBOX_HICOLOR_OFFSET/2)] = colorhi;
+                best_length = length;
+                best_prio   = prio;
+                allowed_parts = combination;
             }
-            if(StatusLine[p]) ++p;
-        }}
+        }
+        // Only the first two parts go to the left, anything else goes on right
+        left_parts  = allowed_parts & 3;
+        right_parts = allowed_parts & ~3;
+    }
+
+    unsigned xbegin[NumParts], xend[NumParts];
+    memset(xbegin,0,sizeof(xbegin)); memset(xend,0,sizeof(xend));
+
+    unsigned leftn=6;  // Calculate starting positions for left-side parts
+    unsigned rightn=0; // Calculate relative starting positions for right-side parts
+    {for(unsigned n=0; n<NumParts; ++n)
+    {
+        unsigned bit = 1 << n;
+        if(left_parts & bit)  { if(leftn) { ++leftn; }   xbegin[n] = leftn;  xend[n] = (leftn  += Lengths[n]); }
+        if(right_parts & bit) { if(rightn) { ++rightn; } xbegin[n] = rightn; xend[n] = (rightn += Lengths[n]); }
+    }}
+    // Adjust the right-side starting positions
+    int      right_start = StatusWidth - 1 - rightn;
+    int      left_end    = leftn+1;
+    if(right_start < left_end) right_start = left_end;
+    {for(unsigned n=0; n<NumParts; ++n)
+        if(right_parts & (1u << n)) { xbegin[n] += right_start; xend[n] += right_start; }
+    }
+
+    // Now render the actual status line into Hdr[] with colors.
+    static LongVecType Hdr; Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
+
+    slide1.SetWidth(StatusWidth);
+    for(unsigned x=0; x<StatusWidth; ++x)
+    {
+        unsigned char ch, c1, c2; slide1.Get(x, ch,c1,c2);
+
+        if(C64palette) { c1=7; c2=0; ch = 0x20; }
+
+        // Identify the character at this position
+        unsigned char c = 0x20;
+        if(x == 0 && WaitingCtrl)                            c = '^';
+        else if(x == 1 && WaitingCtrl)                       c = WaitingCtrl;
+        else if(x == 3 && InsertMode)                        c = 'I';
+        else if(x == 4 && UnsavedChanges)                    c = '*';
+        else for(unsigned n=0; n<NumParts; ++n)
+            if(x < xend[n] && x >= xbegin[n])
+            {
+                c = (unsigned char) Parts[n][x - xbegin[n]];
+                break;
+            }
+
+        // Convert the character into rendered symbol
+        if(c != 0x20)
+        {
+            ch = c; c2 = 0;
+            //if(c1 == c2) c2 = 7;
+        }
+        /*if(!C64palette && c != 0x20)
+            switch(c2)
+            {
+                case 8: c1 = 7; break;
+                case 0: c1 = 8; break;
+            }*/
+
+        unsigned short colorlo = ch | 0x8000u | (c2 << 8u);
+        unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
+
+        if(FatMode) { Hdr[x+x] = colorlo; Hdr[x+x+1] = colorlo|0x80; }
+        else        { Hdr[x] = colorlo | (((unsigned long)colorhi) << 16u); }
+    }
+    // Then translate the Hdr[] buffer on screen using MarioTranslate.
     MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);
 
-#ifdef __BORLANDC__
-    if(0 && !kbhit())
-    {
-        /* Wait retrace */
-        /**/ _asm { mov dx, 0x3DA }
-        WR1: _asm { in al, dx; and al, 8; jnz WR1 }
-        WR2: _asm { in al, dx; and al, 8; jz WR2 }
-    }
-#endif
+    VisRenderStatusLine();
 }
+
+/* VisRender: Render whole screen except the status line */
 void VisRender()
 {
-    static LongVecType EmptyLine;
+    static LongVecType EmptyLine; // Dummy vector representing an empty line
+
+    // Hide soft-cursor
+    VisSoftCursor(-1);
 
     unsigned winh = VidH - 1;
     if(StatusLine[0]) --winh;
-
-    VisSoftCursor(-1);
-
     for(unsigned y=0; y<winh; ++y)
     {
         unsigned short* Tgt = GetVidMem(0, y+1);
@@ -748,17 +777,9 @@ void VisRender()
             if(FatMode) *Tgt++ = trail | 0x80;
         }
     }
-    VisSoftCursor(1);
 
-#ifdef __BORLANDC__
-    if(0 && !kbhit())
-    {
-        /* Wait retrace */
-        /**/ _asm { mov dx, 0x3DA }
-        WR1: _asm { in al, dx; and al, 8; jnz WR1 }
-        WR2: _asm { in al, dx; and al, 8; jz WR2 }
-    }
-#endif
+    // Redraw soft-cursor
+    VisSoftCursor(1);
 }
 
 unsigned wx = ~0u, wy = ~0u, cx = ~0u, cy = ~0u;
@@ -786,92 +807,102 @@ void WaitInput(int may_redraw = 1)
 {
     if(may_redraw)
     {
+        // If the cursor position has changed from last update,
+        // hide the software cursor and replace the hardware cursor
         if(cx != Cur.x || cy != Cur.y) { cx=Cur.x; cy=Cur.y; VisSoftCursor(-1); VisSetCursor(); }
+        // If statusline is visible and cursor coincides with statusline, scroll screen down
         if(StatusLine[0] && Cur.y >= Win.y+VidH-2) Win.y += 2;
     }
 
+    // There is work to do, so request more CPU speed
     Cycles_Adjust(1);
 
-    if(!kbhit())
+    // Quickly skip doing anything if no key has been presed
+    if(kbhit()) return;
+
+    // Adjust window position horizontally making sure cursor is on screen
+    while(Cur.x < Win.x)         Win.x -= 8;
+    while(Cur.x >= Win.x + VidW) Win.x += 8;
+
+    int needs_redraw = 0;
+
+    // If the window position has changed from last update,
+    // hide the software cursor and replace the hardware cursor
+    if(may_redraw && (wx != Win.x || wy != Win.y))
     {
-        while(Cur.x < Win.x) Win.x -= 8;
-        while(Cur.x >= Win.x + VidW) Win.x += 8;
+        VisSoftCursor(-1);
+        VisSetCursor();
+        // Delay the screen refreshing though,
+        // so we only do it once
+        needs_redraw = 1;
+    }
+
+    while(!kbhit())
+    {
         if(may_redraw)
         {
-            if(wx != Win.x || wy != Win.y)
+            if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
             {
-                VisSoftCursor(-1);
-                VisSetCursor();
-            }
-        }
-        do {
-            if(may_redraw)
-            {
-                if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
+                int horrible_sight =
+                    (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
+                    (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
+                /* If the sight on the very screen currently
+                 * is "horrible", do, as a quick fix, a scan
+                 * of the current screen to at least make it
+                 * look different.
+                 */
+
+                if(SyntaxCheckingNeeded != SyntaxChecking_Interrupted
+                || horrible_sight)
                 {
-                    int horrible_sight =
-                        (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
-                        (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
-                    /* If the sight on the very screen currently
-                     * is "horrible", do, as a quick fix, a scan
-                     * of the current screen to at least make it
-                     * look different.
-                     */
+                    unsigned line = 0;
 
-                    if(SyntaxCheckingNeeded != SyntaxChecking_Interrupted
-                    || horrible_sight)
-                    {
-                        unsigned line = 0;
+                    if( horrible_sight)
+                        line = Win.y;
+                    else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
+                        line = Win.y>SyntaxChecking_ContextOffset ? Win.y-SyntaxChecking_ContextOffset : 0;
 
-                        if( horrible_sight)
-                            line = Win.y;
-                        else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
-                            line = Win.y>SyntaxChecking_ContextOffset ? Win.y-SyntaxChecking_ContextOffset : 0;
-
-                        Syntax.ApplyInit(SyntaxCheckingState);
-                        SyntaxCheckingApplier.Reset(line);
-                    }
-                    Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
-
-                    if(SyntaxCheckingNeeded == SyntaxChecking_Interrupted)
-                    {
-                        // If the syntax checking was interrupted
-                    }
-
-                    SyntaxCheckingNeeded =
-                        !SyntaxCheckingApplier.finished
-                        ? SyntaxChecking_Interrupted
-                        : (SyntaxCheckingApplier.begin_line == 0)
-                            ? SyntaxChecking_IsPerfect
-                            : SyntaxChecking_DoingFull;
-
-                    wx=Win.x; wy=Win.y;
-                    VisRender();
+                    Syntax.ApplyInit(SyntaxCheckingState);
+                    SyntaxCheckingApplier.Reset(line);
                 }
-                if(wx != Win.x || wy != Win.y)
-                    { wx=Win.x; wy=Win.y; VisRender(); }
+                // Apply syntax coloring. Will continue applying colors until
+                // either a key is pressed, or the checking finishes.
+                Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
+
+                // Update the need-syntax-checking state
+                SyntaxCheckingNeeded =
+                    !SyntaxCheckingApplier.finished
+                    ? SyntaxChecking_Interrupted
+                    : (SyntaxCheckingApplier.begin_line == 0)
+                        ? SyntaxChecking_IsPerfect
+                        : SyntaxChecking_DoingFull;
+
+                // Something was changed, so refresh screen now
+                needs_redraw = 1;
             }
-            VisRenderStatus();
-            VisSoftCursor(0);
-        #if defined(__BORLANDC__) || defined(__DJGPP__)
-            if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
-            || SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
-            {
-                if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect)
-                    Cycles_Adjust(-1);
-              #ifdef __BORLANDC__
-                _asm { hlt }
-              #else
-                //__dpmi_yield();
-                __asm__ volatile("hlt");
-                // dpmi_yield is not used, because it's not implemented in dosbox
-                // Instead, we issue "hlt" and patch DOSBox to not produce an exception
-                /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
-                 * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
-              #endif
-            }
-        #endif
-        } while(!kbhit());
+            // In any case, refresh screen if _something_ changed
+            if(needs_redraw)
+                { wx=Win.x; wy=Win.y; VisRender(); needs_redraw = 0; }
+        }
+        VisRenderTitleAndStatus();
+        VisSoftCursor(0);
+
+        if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
+        || SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
+        {
+            if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect)
+                Cycles_Adjust(-1);
+          #ifdef __BORLANDC__
+            _asm { hlt }
+          #elif defined(__DJGPP__)
+            //__dpmi_yield();
+            __asm__ volatile("hlt");
+            // dpmi_yield is not used, because it's not implemented in dosbox
+            // Instead, we issue "hlt" and patch DOSBox to not produce an exception
+            /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
+             * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
+          #endif
+        }
     }
 }
 
@@ -1304,7 +1335,7 @@ int SelectFont()
     {
         VisSoftCursor(-1);
         sprintf(StatusLine, "Please select new font size [Cancel]");
-        VisRenderStatus();
+        VisRenderTitleAndStatus();
         StatusLine[0] = 0;
 
         char marker_empty  = '.';
@@ -1409,7 +1440,7 @@ int VerifyUnsavedExit(const char* action)
     VisSoftCursor(-1);
     int s = sprintf(StatusLine, "FILE IS UNSAVED. PROCEED WITH %s? Y/N  ", action);
     VisPutCursorAt(s-1, VidH-1);
-    VisRenderStatus();
+    VisRenderTitleAndStatus();
     int decision = 0;
     for(;;)
     {
@@ -1446,7 +1477,7 @@ int PromptText(const char* message, const char* deftext, char** result)
         strcpy(buffer+1, data+firstPos);
         buffer[0]       = firstPos > 0 ? arrow_left : ' ';
         buffer[sizex-1] = data_length-firstPos > (sizex-2) ? arrow_right : ' ';
-        VisRenderStatus();
+        VisRenderTitleAndStatus();
         VisPutCursorAt(begin_offset + (curPos-firstPos+1), VidH-1);
 
         WaitInput();
@@ -1536,7 +1567,7 @@ void InvokeSave(int ask_name)
     unsigned long size = ftell(fp);
     fclose(fp);
     sprintf(StatusLine, "Saved %lu bytes to %s", size, CurrentFileName);
-    VisRenderStatus();
+    VisRenderTitleAndStatus();
     UnsavedChanges = 0;
 }
 void InvokeLoad()
@@ -1586,7 +1617,7 @@ void LineAskGo() // Go to line
             : Cur.y;
     }
     Win.x = 0;
-    VisRenderStatus();
+    VisRenderTitleAndStatus();
     VisRender();
 }
 void ResizeAsk() // Ask for new screen dimensions
@@ -1708,9 +1739,15 @@ int main(int argc, char**argv)
 
     for(;;)
     {
+        // Render / idle until a key is pressed
         WaitInput();
+
+        // Identify the key that was pressed
         unsigned c = getch();
 
+        // Read also the keyboard shift-key state, because this
+        // is not necessarily indicated in the getch() result
+        // in case of some ctrl-keycombinations
 #ifdef __BORLANDC__
         int shift = 3 & (*(char*)MK_FP(0x40,0x17));
 #elif defined(__DJGPP__)
@@ -1718,15 +1755,20 @@ int main(int argc, char**argv)
 #else
         int shift = 0;
 #endif
-        int wasbegin = Cur.x==BlockBegin.x && Cur.y==BlockBegin.y;
-        int wasend   = Cur.x==BlockEnd.x && Cur.y==BlockEnd.y;
-        unsigned WasX = Cur.x, WasY = Cur.y;
-        int dragalong=0;
+
+        // If there is a status line visible, and its expiration timer
+        // has run out, delete the status line.
         if(StatusLine[0] && StatusLineProtection < MarioTimer)
         {
             StatusLine[0] = '\0';
             VisRender();
         }
+
+        int wasbegin = Cur.x==BlockBegin.x && Cur.y==BlockBegin.y;
+        int wasend   = Cur.x==BlockEnd.x   && Cur.y==BlockEnd.y;
+        unsigned WasX = Cur.x, WasY = Cur.y;
+        int dragalong=0;
+
         unsigned /*DimX = VidW,*/ DimY = VidH-1;
         char WasAppend = 0;
         chars_typed += 1;
@@ -2060,7 +2102,7 @@ int main(int argc, char**argv)
                             sprintf(res, "%ux%u, %ld.%03ld fps", VidW,VidH, fpsval/1000, fpsval%1000);
                             sprintf(StatusLine, "READY%*s", VidW-5, res);
                         }
-                        VisRenderStatus();
+                        VisRenderTitleAndStatus();
                         StatusLineProtection = MarioTimer + 200u;
                         break;
                     case 0x43: // F9
