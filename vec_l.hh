@@ -4,10 +4,8 @@
 
 /* Vector of unsigned long */
 
-#define T       unsigned long
-#define VecType LongVecType
+#define o(x) x(unsigned long,LongVecType)
 #include "vecbase.hh"
-#undef VecType
-#undef T
+#undef o
 
 #endif

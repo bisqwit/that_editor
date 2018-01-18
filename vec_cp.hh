@@ -7,14 +7,9 @@
 #include "vec_c.hh"
 
 #define UsePlacementNew
-
-#define T       CharVecType
-#define VecType CharPtrVecType
-
+#define o(x) x(CharVecType,CharPtrVecType)
 #include "vecbase.hh"
-
-#undef VecType
-#undef T
+#undef o
 #undef  UsePlacementNew
 
 #endif

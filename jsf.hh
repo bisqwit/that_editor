@@ -173,11 +173,9 @@ private:
     };
     /* std::vector<table_item> without STL, for Borland C++ */
     #define UsePlacementNew
-    #define T       table_item
-    #define VecType TabType
+    #define o(x) x(table_item,TabType)
     #include "vecbase.hh"
-    #undef VecType
-    #undef T
+    #undef o
     #undef UsePlacementNew
 
     struct option

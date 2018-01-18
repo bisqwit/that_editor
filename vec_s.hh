@@ -4,10 +4,8 @@
 
 /* Vector of unsigned short */
 
-#define T       unsigned short
-#define VecType WordVecType
+#define o(x) x(unsigned short,WordVecType)
 #include "vecbase.hh"
-#undef VecType
-#undef T
+#undef o
 
 #endif

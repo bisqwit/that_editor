@@ -7,15 +7,9 @@
 #include "vec_l.hh"
 
 #define UsePlacementNew
-
-#define T       LongVecType
-#define VecType LongPtrVecType
-
+#define o(x) x(LongVecType,LongPtrVecType)
 #include "vecbase.hh"
-
-#undef VecType
-#undef T
-
+#undef o
 #undef UsePlacementNew
 
 #endif

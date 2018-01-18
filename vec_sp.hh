@@ -7,15 +7,9 @@
 #include "vec_s.hh"
 
 #define UsePlacementNew
-
-#define T       WordVecType
-#define VecType WordPtrVecType
-
+#define o(x) x(WordVecType,WordPtrVecType)
 #include "vecbase.hh"
-
-#undef VecType
-#undef T
-
+#undef o
 #undef UsePlacementNew
 
 #endif

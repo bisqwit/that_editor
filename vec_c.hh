@@ -4,10 +4,8 @@
 
 /* Vector of unsigned char */
 
-#define T       unsigned char
-#define VecType CharVecType
+#define o(x) x(unsigned char,CharVecType)
 #include "vecbase.hh"
-#undef VecType
-#undef T
+#undef o
 
 #endif

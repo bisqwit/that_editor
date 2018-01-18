@@ -372,7 +372,7 @@ void VgaSetCustomMode(
 
     /* This script is, for the most part, copied from DOSBox. */
 
-    {unsigned long seq = 0x60300; if(!is_9pix) seq|=0x10; if(is_half) seq|=0x80;
+    {unsigned long seq = 0x60300UL; if(!is_9pix) seq|=0x10; if(is_half) seq|=0x80;
     for(unsigned a=0; a<5; ++a) outport(0x3C4, a | (((seq >> (a*4))&0xF) << 8));}
 
     // Disable write protection

@@ -10,7 +10,10 @@
 #if defined(__cplusplus) && __cplusplus >= 199711L
 
 #include <vector>
-typedef std::vector<T> VecType;
+
+#define q(T,VecType) typedef std::vector<T> VecType;
+o(q)
+#undef q
 
 #else
 
@@ -20,10 +23,15 @@ typedef std::vector<T> VecType;
 # include <malloc.h>
 #endif
 
-class VecType
+#define q(T,VecType) class VecType
+o(q)
+#undef q
 {
 public:
-    //typedef unsigned char T;
+    #define q(TT,VT) typedef TT T; typedef VT VecType;
+    o(q)
+    #undef q
+    #define q(T,VecType) VecType
 
     typedef T value_type;
     typedef T * iterator;
@@ -41,9 +49,6 @@ public:
 #endif
 
 public:
-    VecType() : data(0),len(0),cap(0) { }
-    ~VecType() { clear(); if(cap) deallocate(data,cap); }
-
     void Construct() { data=0; len=0; cap=0; }
     void Destruct()  { clear(); if(cap) deallocate(data,cap); }
     void Construct(const VecType& b)
@@ -57,19 +62,21 @@ public:
         }
     }
 
-    VecType(size_type length) : data(0),len(0),cap(0)
+    o(q) () : data(0),len(0),cap(0) { }
+    ~o(q) () { clear(); if(cap) deallocate(data,cap); }
+    o(q) (size_type length) : data(0),len(0),cap(0)
     {
         resize(length);
     }
-    VecType(size_type length, Ttype value) : data(0),len(0),cap(0)
+    o(q) (size_type length, Ttype value) : data(0),len(0),cap(0)
     {
         resize(length, value);
     }
-    VecType(T const* first, T const* last) : data(0),len(0),cap(0)
+    o(q) (T const* first, T const* last) : data(0),len(0),cap(0)
     {
         assign(first, last);
     }
-    VecType(const VecType& b) : data(0), len(b.len), cap(b.len)
+    o(q) (const VecType& b) : data(0), len(b.len), cap(b.len)
     {
         if(len)
         {
@@ -79,7 +86,7 @@ public:
         }
     }
 #if defined(__cplusplus) && __cplusplus >= 201100L
-    VecType(VecType&& b): data(b.data), len(b.len), cap(b.cap)
+    o(q)(VecType&& b): data(b.data), len(b.len), cap(b.cap)
     {
         b.data = 0;
         b.len  = 0;
@@ -652,6 +659,7 @@ private:
     size_type len, cap;
 
 #undef Ttype
+    #undef q
 };
 
 #endif
