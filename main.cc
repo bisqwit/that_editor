@@ -1079,6 +1079,8 @@ int SelectFont()
         else if(c == 13 || c == 10)
             break;
         else if(c == CTRL('A')) goto hom;
+        else if(c == CTRL('B')) goto left;
+        else if(c == CTRL('F')) goto right;
         else if(c == CTRL('E')) goto end;
         else if(c == CTRL('U')) goto pgup;
         else if(c == CTRL('V')) goto pgdn;
@@ -1096,8 +1098,8 @@ int SelectFont()
                 case 'P': dn:
                     if(++sel_y >= noptions) sel_y = -1;
                     break;
-                case 'K': if(sel_x>0) --sel_x; else { sel_x=4; goto up; } break;
-                case 'M': if(sel_x<4) ++sel_x; else { sel_x=0; goto dn; } break;
+                case 'K': left: if(sel_x>0) --sel_x; else { sel_x=4; goto up; } break;
+                case 'M': right: if(sel_x<4) ++sel_x; else { sel_x=0; goto dn; } break;
                 case 0x47: hom: if(sel_x > 0) sel_x=0; else sel_y=0; break;
                 case 0x4F: end: if(sel_x < 4) sel_x=4; else sel_y=noptions-1; break;
                 case 0x49: pgup: sel_y = 0; break;
