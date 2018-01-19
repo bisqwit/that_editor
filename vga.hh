@@ -19,6 +19,12 @@ static const unsigned char p32font[32*256] = {
 static const unsigned char p19font[19*256] = {
 #include "8x19.inc"
 };
+static const unsigned char p12font[12*256] = {
+#include "8x12.inc"
+};
+static const unsigned char p15font[15*256] = {
+#include "8x15.inc"
+};
 static const unsigned char p32wfont[32*256] = {
 #include "16x32.inc"
 };
@@ -34,6 +40,8 @@ void VgaGetFont()
         case 14: mode = 2; break;
         case 16: mode = 6; break;
         case 19: case 20: { VgaFont = p19font; return; }
+        case 12: { VgaFont = p12font; return; }
+        case 15: { VgaFont = p15font; return; }
         case 32: { VgaFont = FatMode ? p32wfont : p32font; return; }
         default: mode = 1; break;
     }
@@ -126,6 +134,8 @@ void VgaSetCustomMode(
     unsigned htotal = width*5/4;
     unsigned vtotal = vdispend+45;
 
+    *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
+
     //if(1)
     {
         void* emptyfont = malloc(8192);
@@ -199,6 +209,38 @@ void VgaSetCustomMode(
              mov bp, offset p19font
              mov ax, 0x1100
              mov bx, 0x1300
+             mov cx, 256
+             mov dx, 0
+             int 0x10
+            pop bp
+            pop es
+        }
+    }
+    if(font_height == 12) {
+        _asm {
+            push es
+            push bp
+             mov ax, seg p12font
+             mov es, ax
+             mov bp, offset p12font
+             mov ax, 0x1100
+             mov bx, 0x0C00
+             mov cx, 256
+             mov dx, 0
+             int 0x10
+            pop bp
+            pop es
+        }
+    }
+    if(font_height == 15) {
+        _asm {
+            push es
+            push bp
+             mov ax, seg p15font
+             mov es, ax
+             mov bp, offset p15font
+             mov ax, 0x1100
+             mov bx, 0x0F00
              mov cx, 256
              mov dx, 0
              int 0x10
@@ -297,9 +339,7 @@ void VgaSetCustomMode(
 
     *(unsigned char*)MK_FP(0x40,0x65) = 0x29;
     *(unsigned char*)MK_FP(0x40, 0x4A) = width;
-    *(unsigned char*)MK_FP(0x40, 0x84) = height-1;
-    *(unsigned char*)MK_FP(0x40, 0x85) = font_height;
-    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
+    *(unsigned char*)MK_FP(0x40, 0x84) = height-1;    *(unsigned short*)MK_FP(0x40, 0x4C) = width*height*2;
 
     double clock = 28322000.0;
     if(((misc_output >> 2) & 3) == 0) clock = 25175000.0;
