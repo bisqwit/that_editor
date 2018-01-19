@@ -5,6 +5,8 @@
 #include <time.h>
 #include <ctype.h>
 
+#include <process.h> // For Cycles adjust on DOSBOX
+
 #define CTRL(c) ((c) & 0x1F)
 
 static const int ENABLE_DRAG = 0;
@@ -308,6 +310,46 @@ void VisSetCursor()
     unsigned cy = Win.y > Cur.y ? 1 : Cur.y-Win.y; ++cy; if(cy >= VidH) cy = VidH-1;
     VisPutCursorAt(cx,cy);
 }
+
+static long CYCLES_Current = 80000l;
+static long CYCLES_Goal    = 80000l;
+static int Cycles_Trend = 0;
+
+static void Cycles_Adjust(int direction)
+{
+    Cycles_Trend = direction;
+}
+static void Cycles_Check()
+{
+    // For Cycles adjust on DOSBOX
+    if(Cycles_Trend > 0 && CYCLES_Goal < 1000000l)
+    {
+        CYCLES_Goal = CYCLES_Goal * 125l / 100l;
+    }
+    if(Cycles_Trend < 0 && CYCLES_Goal > 12000l)
+    {
+        if(CYCLES_Goal > 150000l)
+            CYCLES_Goal = CYCLES_Goal * 5l / 10l;
+        else
+            CYCLES_Goal = CYCLES_Goal * 7l / 10l;
+    }
+
+    if(CYCLES_Goal/3000l != CYCLES_Current/3000l)
+    {
+        //static unsigned counter=0;
+        //if(counter != 1) return;//if(++counter < 5) return;
+        //counter=0;
+        char Buf[64];
+        sprintf(Buf, " CYCLES=%ld", CYCLES_Current = CYCLES_Goal);
+
+        unsigned psp = getpsp();
+        sprintf( (char*) MK_FP(psp, 0x80), "%s", Buf);
+
+         _asm { db 0xFE,0x38,0x06,0x00 }
+    }
+    Cycles_Trend = 0;
+}
+
 void VisRenderStatus()
 {
     WordVecType Hdr(VidW*2);
@@ -485,6 +527,15 @@ enum SyntaxCheckingType
 
 JSF::ApplyState SyntaxCheckingState;
 ApplyEngine     SyntaxCheckingApplier;
+
+/* TODO: In syntax checking: If the syntax checker ever reaches the current editing line,
+ *                           make a save in the beginning of the line and use that for resuming
+ *                           instead of backtracking to the context
+ */
+
+// How many lines to backtrack
+#define SyntaxChecking_ContextOffset 50
+
 void WaitInput(int may_redraw = 1)
 {
     if(may_redraw)
@@ -492,6 +543,8 @@ void WaitInput(int may_redraw = 1)
         if(cx != Cur.x || cy != Cur.y) { cx=Cur.x; cy=Cur.y; VisSoftCursor(-1); VisSetCursor(); }
         if(StatusLine[0] && Cur.y >= Win.y+VidH-2) Win.y += 2;
     }
+
+    Cycles_Adjust(1);
 
     if(!kbhit())
     {
@@ -527,12 +580,17 @@ void WaitInput(int may_redraw = 1)
                         if( horrible_sight)
                             line = Win.y;
                         else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
-                            line = Win.y>7 ? Win.y-7 : 0;
+                            line = Win.y>SyntaxChecking_ContextOffset ? Win.y-SyntaxChecking_ContextOffset : 0;
 
                         Syntax.ApplyInit(SyntaxCheckingState);
                         SyntaxCheckingApplier.Reset(line);
                     }
                     Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
+
+                    if(SyntaxCheckingNeeded == SyntaxChecking_Interrupted)
+                    {
+                        // If the syntax checking was interrupted
+                    }
 
                     SyntaxCheckingNeeded =
                         !SyntaxCheckingApplier.finished
@@ -551,9 +609,11 @@ void WaitInput(int may_redraw = 1)
             VisSoftCursor(0);
         #ifdef __BORLANDC__
             if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
-            || SyntaxCheckingNeeded == SyntaxChecking_DoingFull)
+            || SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
             {
-               _asm { hlt }
+                if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect)
+                    Cycles_Adjust(-1);
+                _asm { hlt }
             }
         #endif
         } while(!kbhit());
