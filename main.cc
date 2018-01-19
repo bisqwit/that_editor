@@ -12,6 +12,8 @@
 static const int ENABLE_DRAG = 0;
 
 volatile unsigned long MarioTimer = 0;
+static unsigned long chars_file  = 0;
+static unsigned long chars_typed = 0;
 
 // Return just the filename part of pathfilename
 const char* fnpart(const char* fn)
@@ -75,6 +77,8 @@ static unsigned char kbhitbuf[] =
 
 #include "jsf.hh"
 #include "vga.hh"
+
+#include "cpu.h"
 
 const unsigned UnknownColor = 0x2400;
 
@@ -165,6 +169,10 @@ void FileLoad(char* fn)
     fclose(fp);
     Win = Cur = Anchor();
     UnsavedChanges = 0;
+
+    chars_file = 0;
+    for(size_t a=0; a<EditLines.size(); ++a)
+        chars_file += EditLines[a].size();
 }
 void FileNew()
 {
@@ -178,6 +186,7 @@ void FileNew()
 
     if(CurrentFileName) free(CurrentFileName);
     CurrentFileName = 0;
+    chars_file = 3; // Three newlines
 }
 struct ApplyEngine: public JSF::Applier
 {
@@ -374,12 +383,24 @@ void VisRenderStatus()
         (unsigned) (Cur.y+1),
         (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
         (unsigned) (Cur.x+1));
-    sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
+    //sprintf(Buf2, "%02d:%02d:%02d", tm->tm_hour,tm->tm_min,tm->tm_sec);
+    //sprintf(Buf2, "+26 ");
+    { //unsigned l = sprintf(Buf2, "%lu/%lu C +21øC", chars_file, chars_typed);
+      unsigned l = sprintf(Buf2, "%02d:%02d:%02d %lu/%lu ",
+        tm->tm_hour,tm->tm_min,tm->tm_sec,
+        chars_file, chars_typed);
+      if(VidW >= 65)
+      {
+        sprintf(Buf2+l, " %d MHz", (int)(CPUinfo() * 1e-6));
+        FixMarioTimer();
+    } }
+
     unsigned x1a = VidW*12/70;
     unsigned x2a = VidW*55/70;
     if(showfn) x1a = 7;
     unsigned x1b = x1a + strlen(Buf1);
     unsigned x2b = x2a + strlen(Buf2);
+    if(x2b >= VidW) { x2b = VidW-1; x2a = x2b - strlen(Buf2); }
 
     static const unsigned char slide[] = {3,7,7,7,7,3,3,2};
     static const unsigned char slide2[] = {15,15,15,14,7,6,8,0,0};
@@ -404,9 +425,9 @@ void VisRenderStatus()
         else if(x == 4 && UnsavedChanges)
             color = (color&0xF000) | '*';
         else if(x >= x1a && x < x1b && Buf1[x-x1a] != ' ')
-            color = (color&0xF000) | Buf1[x-x1a];
+            color = (color&0xF000) | (unsigned char)Buf1[x-x1a];
         else if(x >= x2a && x < x2b && Buf2[x-x2a] != ' ')
-            color = (color&0xF000) | Buf2[x-x2a];
+            color = (color&0xF000) | (unsigned char)Buf2[x-x2a];
         if(FatMode)
             { Hdr[x+x] = color; Hdr[x+x+1] = color|0x80; }
         else
@@ -693,6 +714,8 @@ void PerformEdit(
     event.y = y;
     event.n_delete = 0;
 
+    chars_file += insert_chars.size();
+
     if(DoingUndo)
     {
         int s = sprintf(StatusLine,"Edit%u @%u,%u: Delete %u, insert '",
@@ -733,10 +756,14 @@ void PerformEdit(
         }
         // Now the deletion can begin
         if(n_delete > EditLines[y].size()-x) n_delete = EditLines[y].size()-x;
+
+        chars_file += event.insert_chars.size();
         event.insert_chars.insert(
             event.insert_chars.end(),
             EditLines[y].begin() + x,
             EditLines[y].begin() + x + n_delete);
+        chars_file -= event.insert_chars.size();
+
         EditLines[y].erase(
             EditLines[y].begin() + x,
             EditLines[y].begin() + x + n_delete);
@@ -1383,6 +1410,7 @@ int main(int argc, char**argv)
         }
         unsigned DimX = VidW, DimY = VidH-1;
         char WasAppend = 0;
+        chars_typed += 1;
         switch(c)
         {
             case CTRL('V'): // ctrl-V

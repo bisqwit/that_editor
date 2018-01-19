@@ -11,7 +11,8 @@ rem main.exe e.exe
 
 bcc -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include main.cc
 tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 main.asm,main.obj
-tlink /3 /m /P=65536 /yx+ ..\lib\c0c.obj main.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
+tasm /D__COMPACT__ /D__CDECL__ /r /ml /m9 cpu.asm,cpu.obj
+tlink /3 /m /P=65536 /yx+ ..\lib\c0c.obj main.obj cpu.obj, e.exe,,..\lib\cc.lib ..\lib\mathc.lib ..\lib\fp87.lib
 
 REM c0c = normal startup module
 REM c0fc = when -Fm or -Fs is used, stack is placed in DS so SS=DS
