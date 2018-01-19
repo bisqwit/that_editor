@@ -49,6 +49,9 @@ public:
 #endif
 
 public:
+#if !(defined(__cplusplus) && __cplusplus >= 199700L)
+    // Construct() and Destruct() are needed only
+    // because of lack of placement-new in pre-standard C++
     void Construct() { data=0; len=0; cap=0; }
     void Destruct()  { clear(); if(cap) deallocate(data,cap); }
     void Construct(const VecType& b)
@@ -61,7 +64,7 @@ public:
             copy_construct(&data[0], &b.data[0],len);
         }
     }
-
+#endif
     o(q) () : data(0),len(0),cap(0) { }
     ~o(q) () { clear(); if(cap) deallocate(data,cap); }
     o(q) (size_type length) : data(0),len(0),cap(0)
@@ -211,10 +214,12 @@ public:
         {
             if(ins_pos == len)
             {
-              #ifdef UsePlacementNew
+              #if defined(__cplusplus) && __cplusplus >= 199700L
+                new(&data[ins_pos]) T( value );
+              #elif defined(UsePlacementNew)
                 data[ins_pos].Construct(value);
               #else
-                /*new(&data[ins_pos]) T( value );*/ data[ins_pos] = value;
+                data[ins_pos] = value;
               #endif
             }
             else
@@ -230,10 +235,12 @@ public:
         if(ins_pos == len)
         {
             reserve(newcap);
-          #ifdef UsePlacementNew
+          #if defined(__cplusplus) && __cplusplus >= 199700L
+            new(&data[ins_pos]) T( value );
+          #elif defined(UsePlacementNew)
             data[ins_pos].Construct(value);
           #else
-            /*new(&data[ins_pos]) T( value );*/ data[ins_pos] = value;
+            data[ins_pos] = value;
           #endif
             ++len;
             return data+ins_pos;
@@ -241,10 +248,12 @@ public:
         T * newdata = allocate(newcap);
         if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", (unsigned)newcap);
         move_construct(&newdata[0], &data[0], ins_pos);
-      #ifdef UsePlacementNew
+      #if defined(__cplusplus) && __cplusplus >= 199700L
+        new(&newdata[ins_pos]) T( value );
+      #elif defined(UsePlacementNew)
         newdata[ins_pos].Construct(value);
       #else
-        /*new(&newdata[ins_pos]) T( value );*/ newdata[ins_pos] = value;
+        newdata[ins_pos] = value;
       #endif
         move_construct(&newdata[ins_pos+1], &data[ins_pos], len-ins_pos);
         destroy(&data[0], len);
@@ -540,27 +549,35 @@ private:
     {
         for(size_type a=0; a<count; ++a)
         {
-      #ifdef UsePlacementNew
+          #if defined(__cplusplus) && __cplusplus >= 199700L
+            new(&target[a]) T();
+          #elif defined(UsePlacementNew)
             target[a].Construct();
-      #else
-            /*new(&target[a]) T();*/ target[a] = (T)0;
-      #endif
+          #else
+            target[a] = (T)0;
+          #endif
         }
     }
     static void construct(T * target, size_type count, Ttype param)
     {
         for(size_type a=0; a<count; ++a)
-      #ifdef UsePlacementNew
+        {
+          #if defined(__cplusplus) && __cplusplus >= 199700L
+            new(&target[a]) T(param);
+          #elif defined(UsePlacementNew)
             target[a].Construct(param);
-      #else
-            /*new(&target[a]) T(param);*/ target[a] = param;
-      #endif
+          #else
+            target[a] = param;
+          #endif
+        }
     }
     static void destroy(T * target, size_type count)
     {
-      #ifdef UsePlacementNew
+      #if defined(__cplusplus) && __cplusplus >= 199700L
         for(size_type a=count; a-- > 0; )
-            /*target[a].~T();*/
+            target[a].~T();
+      #elif defined(UsePlacementNew)
+        for(size_type a=count; a-- > 0; )
             target[a].Destruct();
       #else
         target=target;
@@ -569,48 +586,42 @@ private:
     }
     static void move_assign(T * target, T * source, size_type count)
     {
-#if defined(__cplusplus) && __cplusplus >= 201100L
+      #if defined(__cplusplus) && __cplusplus >= 201100L
         for(size_type a=0; a<count; ++a)
             target[a] = std::move(source[a]);
-#else
-  #ifdef UsePlacementNew
+      #elif defined(UsePlacementNew)
         for(size_type a=0; a<count; ++a)
             target[a].swap(source[a]);
-  #else
+      #else
         copy_assign(target, source, count);
-  #endif
-#endif
+      #endif
     }
     static void move_assign_backwards(T * target, T * source, size_type count)
     {
-#if defined(__cplusplus) && __cplusplus >= 201100L
+      #if defined(__cplusplus) && __cplusplus >= 201100L
         for(size_type a=count; a-- > 0; )
             target[a] = std::move(source[a]);
-#else
-  #ifdef UsePlacementNew
+      #elif defined(UsePlacementNew)
         for(size_type a=count; a-- > 0; )
             target[a].swap(source[a]);
-  #else
+      #else
         copy_assign_backwards(target, source, count);
-  #endif
-#endif
+      #endif
     }
     static void move_construct(T * target, T * source, size_type count)
     {
-#if defined(__cplusplus) && __cplusplus >= 201100L
+      #if defined(__cplusplus) && __cplusplus >= 201100L
         for(size_type a=0; a<count; ++a)
             new(&target[a]) T( std::move(source[a]) );
-#else
-  #ifdef UsePlacementNew
+      #elif defined(UsePlacementNew)
         for(size_type a=0; a<count; ++a)
         {
             target[a].Construct();
             target[a].swap(source[a]);
         }
-  #else
+      #else
         copy_construct(target, source, count);
-  #endif
-#endif
+      #endif
     }
     static T const*
             copy_assign(T * target, T const* source, size_type count)
@@ -630,11 +641,15 @@ private:
             copy_construct(T * target, T const* source, size_type count)
     {
         for(size_type a=0; a<count; ++a)
-          #ifdef UsePlacementNew
+        {
+          #if defined(__cplusplus) && __cplusplus >= 199700L
+            new(&target[a]) T( *source++ );
+          #elif defined(UsePlacementNew)
             target[a].Construct(*source++);
           #else
-            /*new(&target[a]) T( *source++ );*/ target[a] = *source++;
+            target[a] = *source++;
           #endif
+        }
         return source;
     }
 

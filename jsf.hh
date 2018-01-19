@@ -4,7 +4,6 @@
 
 #if defined(__cplusplus) && __cplusplus >= 199700L
 # include <algorithm>
-# include <vector>
 #endif
 
 class JSF
@@ -12,6 +11,10 @@ class JSF
 public:
     JSF() : states(nullptr)
     {
+    }
+    ~JSF()
+    {
+        Clear();
     }
     void Parse(const char* fn)
     {
@@ -26,7 +29,7 @@ public:
         //fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
         TabType colortable;
         bool colors_sorted = false;
-        states = nullptr; // NOTE: THIS LEAKS MEMORY
+        Clear();
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
@@ -50,10 +53,8 @@ public:
         }
         //fprintf(stdout, "Binding... "); fflush(stdout);
         BindStates();
-
-        for(unsigned n=0; n<colortable.size(); ++n) free(colortable[n].token);
-
         //fprintf(stdout, "Done\n"); fflush(stdout);
+        for(unsigned n=0; n<colortable.size(); ++n) free(colortable[n].token);
     }
     struct state;
     struct ApplyState
@@ -157,18 +158,27 @@ private:
             char*  state_name;
         };
 
+#if defined(__cplusplus) && __cplusplus >= 199700L
+        inline table_item()                    { token=nullptr; state=nullptr; }
+        inline table_item(const table_item& b) { token=b.token; state=b.state; }
+        inline ~table_item()                   { }
+        inline table_item& operator=(const table_item& b) { token=b.token; state=b.state; return *this; }
+#else
         inline void Construct() { token=nullptr; state=nullptr; }
         inline void Construct(const table_item& b) { token=b.token; state=b.state; }
-        inline void Destruct() { }
+        inline void Destruct()  { }
+#endif
+#if defined(__cplusplus) && __cplusplus >= 201100L
+        inline void Construct(table_item&& b)        { token=b.token; state=b.state; b.token = nullptr; b.state = nullptr; }
+        inline table_item(table_item&& b)            { Construct(std::move(b)); }
+        inline table_item& operator=(table_item&& b) { Construct(std::move(b)); return *this; }
+#else
         inline void swap(table_item& b)
         {
             register char* t;
             t = token;      token     =b.token;      b.token     =t;
             t = state_name; state_name=b.state_name; b.state_name=t;
         }
-#ifndef __BORLANDC__
-        table_item() : token(nullptr), state(nullptr) {}
-        table_item(const table_item& b) : token(b.token), state(b.state) {}
 #endif
     };
     /* std::vector<table_item> without STL, for Borland C++ */
@@ -231,13 +241,17 @@ private:
              *        BLACK BLUE CYAN GREEN RED YELLOW MAGENTA WHITE
              *        bg_black bg_blue bg_cyan bg_green bg_red bg_yellow bg_magenta bg_white
              *        BG_BLACK BG_BLUE BG_CYAN BG_GREEN BG_RED BG_YELLOW BG_MAGENTA BG_WHITE
-             *        underline dim italic bold inverse blink
+             *        underline=1 dim=2 italic=4 bold=8 inverse=16 blink=32
+             *
+             * This hash has been generated using find_jsf_formula.cc.
+             * As long as it differentiates the *known* words properly
+             * it does not matter what it does to unknown words.
              */
             unsigned short c=0, i=0;
             while(*line && *line != ' ' && *line != '\t') { c += 90u*(unsigned char)*line + i; i+=28; ++line; }
             unsigned char code = ((c + 22u) / 26u) % 46u;
             static const signed char actions[46] = { 10,30,2,1,31,19,29,23,13,36,15,25,7,3,28,-1,20,-1,24,9,16,27,-1,8,35,0,12,21,-1,5,11,17,22,33,32,34,4,14,-1,-1,6,26,-1,-1,18,37};
-            /*if(code >= 0 && code <= 45)*/ code = actions[code - 0];
+            /*if(code >= 0 && code <= 45)*/ code = actions[code - 0]; // cekcpaka
             switch(code >> 4) { case 0: fg256 = code&15; break;
                                 case 1: bg256 = code&15; break;
                                 default:flags |= 1u << (code&7); }
@@ -570,7 +584,7 @@ private:
         }
     }
 
-    #if !(defined(__cplusplus) && __cplusplus >= 199700L)
+    #if !(defined(__cplusplus) && __cplusplus >= 201100L)
     static int TableItemCompareForSort(const void * a, const void * b)
     {
         table_item * aa = (table_item *)a;
@@ -591,11 +605,45 @@ private:
             tab[i] = k;
         }
         */
-        #if defined(__cplusplus) && __cplusplus >= 199700L
+        #if defined(__cplusplus) && __cplusplus >= 201100L
         std::sort(tab.begin(), tab.end(), [&](table_item& a, table_item& b)
                                           { return strcmp(a.token, b.token) < 0; });
         #else
         qsort(&tab[0], tab.size(), sizeof(tab[0]), TableItemCompareForSort);
         #endif
+    }
+    void Clear()
+    {
+        TabType del_list;
+        // States form a linked list; it is easy to go through and delete.
+        // However, options have to be garbage-collected. We use "strings=3"
+        // as a flag indicating the option has been already marked for deletion.
+        for(state* s = states; s; )
+        {
+            if(s->name) { free(s->name); s->name = nullptr; }
+
+            option** o = s->options;
+            for(unsigned n=0; n<256; ++n)
+            {
+                register option* opt = *o++;
+                if(!opt || opt->strings==3) continue;
+                opt->strings = 3;
+                table_item i;
+                i.state = (state*)opt; del_list.push_back(i);
+            }
+
+            state* tmp = s;
+            s = s->next;
+            delete tmp;
+        }
+        for(unsigned b=del_list.size(); b-- > 0; )
+        {
+            option* o = (option*) del_list[b].state;
+            TabType& str = o->stringtable;
+            for(unsigned c=str.size(); c-- > 0; )
+                if(str[c].token)
+                    free(str[c].token);
+            delete o;
+        }
     }
 };
