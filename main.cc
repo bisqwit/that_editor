@@ -672,6 +672,11 @@ void AddRedo(const UndoEvent& event)
          for(cn=0; cn<NumCursors; ++cn) \
              { Anchor& c = SavedCursors[cn]; o(); } \
     } while(0)
+#define AlmostAllCursors() \
+    do { int cn; \
+         for(cn=0; cn<MaxSavedCursors; ++cn) \
+             { Anchor& c = SavedCursors[cn]; o(); } \
+    } while(0)
 
 void PerformEdit(
     unsigned x, unsigned y,
@@ -789,7 +794,7 @@ void PerformEdit(
                     insert_chars.begin() + insert_beginpos,
                     insert_chars.begin() + p );
                 #define o() if(c.y == y && c.x >= x) c.x += n_inserted
-                AllCursors();
+                AlmostAllCursors();
                 #undef o
                 x += n_inserted;
                 insert_beginpos = p;
@@ -1297,7 +1302,14 @@ void LineAskGo() // Go to line
     Cur.y = atoi(line) - 1;
     free(line);
     //Win.y = (Cur.y > DimY/2) ? Cur.y - (DimY>>1) : 0;
-    Win.y = Cur.y > oldy ? (Cur.y > (DimY-2) ? Cur.y - (DimY-2) : 0) : Cur.y;
+    if(Win.y > Cur.y || Win.y+DimY <= Cur.y)
+    {
+        Win.y = Cur.y > oldy
+            ? (Cur.y > (DimY/2)
+                ? Cur.y - (DimY/2)
+                : 0)
+            : Cur.y;
+    }
     Win.x = 0;
     VisRenderStatus();
     VisRender();
@@ -1416,6 +1428,7 @@ int main(int argc, char**argv)
                 break;
             case CTRL('Z'):
                 if(Win.y+1/*+DimY*/ < EditLines.size()) ++Win.y;
+                if(Cur.y < Win.y) Cur.y = Win.y;
                 StatusLine[0] = 0;
                 break;
             case CTRL('K'):
@@ -1449,10 +1462,10 @@ int main(int argc, char**argv)
                     {
                         WordVecType block;
                         GetBlock(block);
-                        BlockEnd.x = Cur.x; BlockEnd.y = Cur.y;
                         unsigned x = Cur.x, y = Cur.y;
                         PerformEdit(Cur.x,Cur.y, InsertMode?0u:block.size(), block);
                         BlockBegin.x = x; BlockBegin.y = y;
+                        BlockEnd.x = Cur.x; BlockEnd.y = Cur.y;
                         break;
                     }
                     case 'y': case 'Y': case CTRL('Y'): // delete block
