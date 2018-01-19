@@ -20,6 +20,7 @@ public:
         fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
         TabType cc;
         char colors_sorted = 0;
+        states = 0; // NOTE: THIS LEAKS MEMORY
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
