@@ -88,7 +88,7 @@ unsigned char TabSize      =4;
 bool  UnsavedChanges  = false;
 char* CurrentFileName = nullptr;
 
-void FileLoad(const char* fn)
+static void FileLoad(const char* fn)
 {
     fprintf(stderr, "Loading '%s'...\n", fn);
     FILE* fp = fopen(fn, "rb");
@@ -153,7 +153,7 @@ void FileLoad(const char* fn)
     for(size_t a=0; a<EditLines.size(); ++a)
         chars_file += EditLines[a].size();
 }
-void FileNew()
+static void FileNew()
 {
     Win = Cur = Anchor();
     EditLines.clear();
@@ -262,7 +262,7 @@ private:
 unsigned CursorCounter = 0;
 
 /* SoftCursor is only used in the C64 simulation mode. */
-void VisSoftCursor(int mode)
+static void VisSoftCursor(int mode)
 {
     if(!C64palette) return; // Don't do anything if C64palette is not activated.
 
@@ -368,7 +368,7 @@ static void Cycles_Adjust(int direction)
 {
     Cycles_Trend = direction;
 }
-void Cycles_Check()
+static void Cycles_Check()
 {
     // For Cycles adjust on DOSBOX
     if(Cycles_Trend > 0 && CYCLES_Goal < 1000000l)
@@ -580,7 +580,7 @@ static const char* StatusGetClock()
 /* VisRenderTitleAndStatus: Renders the title bar and the status bar.
  *                  Status bar is only rendered if non-empty.
  */
-void VisRenderTitleAndStatus()
+static void VisRenderTitleAndStatus()
 {
     // Only re-render status once per frame
     static unsigned long LastMarioTimer = 0xFFFFFFFFul;
@@ -714,7 +714,7 @@ void VisRenderTitleAndStatus()
 }
 
 /* VisRender: Render whole screen except the status line */
-void VisRender()
+static void VisRender()
 {
     static LongVecType EmptyLine; // Dummy vector representing an empty line
 
@@ -807,7 +807,7 @@ ApplyEngine     SyntaxCheckingApplier;
 // How many lines to backtrack
 #define SyntaxChecking_ContextOffset 50
 
-void WaitInput(bool may_redraw = true)
+static void WaitInput(bool may_redraw = true)
 {
     if(may_redraw)
     {
@@ -922,7 +922,7 @@ UndoEvent RedoQueue[MaxUndo];
 unsigned  UndoHead = 0, RedoHead = 0;
 unsigned  UndoTail = 0, RedoTail = 0;
 bool      UndoAppendOk = false;
-void AddUndo(const UndoEvent& event)
+static void AddUndo(const UndoEvent& event)
 {
     unsigned UndoBufSize = (UndoHead + MaxUndo - UndoTail) % MaxUndo;
     if(UndoAppendOk && UndoBufSize > 0)
@@ -949,7 +949,7 @@ void AddUndo(const UndoEvent& event)
     UndoQueue[UndoHead] = event;
     UndoHead = (UndoHead + 1) % MaxUndo;
 }
-void AddRedo(const UndoEvent& event)
+static void AddRedo(const UndoEvent& event)
 {
     unsigned RedoBufSize = (RedoHead + MaxUndo - RedoTail) % MaxUndo;
     if( RedoBufSize >= MaxUndo - 1) RedoTail = (RedoTail + 1) % MaxUndo;
@@ -973,11 +973,17 @@ void AddRedo(const UndoEvent& event)
              { Anchor& c = SavedCursors[cn]; o(); } \
     } while(0)
 
-void PerformEdit(
+enum UndoType
+{
+    DoingUndo_Not,
+    DoingUndo_Undo,
+    DoingUndo_Redo
+};
+static void PerformEdit(
     unsigned x, unsigned y,
     unsigned n_delete,
     const LongVecType& insert_chars,
-    char DoingUndo = 0)
+    UndoType DoingUndo = DoingUndo_Not)
 {
     unsigned eol_x = EditLines[y].size();
     if(eol_x > 0 && (EditLines[y].back() & 0xFF) == '\n') --eol_x;
@@ -1114,14 +1120,14 @@ void PerformEdit(
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
     switch(DoingUndo)
     {
-        case 0: // normal edit
+        case DoingUndo_Not: // normal edit
             RedoHead = RedoTail = 0; // reset redo
             AddUndo(event); // add undo
             break;
-        case 1: // undo
+        case DoingUndo_Undo:
             AddRedo(event);
             break;
-        case 2: // redo
+        case DoingUndo_Redo:
             AddUndo(event); // add undo, but don't reset redo
             break;
     }
@@ -1129,28 +1135,42 @@ void PerformEdit(
     UnsavedChanges = true;
 }
 
-void TryUndo()
+static void PerformEdit(unsigned n_delete, unsigned n_insert, const unsigned char* insert_source)
+{
+    LongVecType txtbuf(n_insert);
+    for(unsigned n=0; n<n_insert; ++n) txtbuf[n] = insert_source[n] | 0x0700;
+    PerformEdit(Cur.x, Cur.y, n_delete, txtbuf);
+}
+static void PerformEdit(unsigned n_delete, unsigned n_insert1, unsigned char ch1, unsigned n_insert2=0, unsigned char ch2=0)
+{
+    LongVecType txtbuf(n_insert1 + n_insert2);
+    {for(unsigned n=0; n<n_insert1; ++n) txtbuf[n            ] = ch1 | 0x0700;}
+    {for(unsigned n=0; n<n_insert2; ++n) txtbuf[n + n_insert1] = ch2 | 0x0700;}
+    PerformEdit(Cur.x, Cur.y, n_delete, txtbuf);
+}
+
+static void TryUndo()
 {
     unsigned UndoBufSize = (UndoHead + MaxUndo - UndoTail) % MaxUndo;
     if(UndoBufSize > 0)
     {
         UndoHead = (UndoHead + MaxUndo-1) % MaxUndo;
         UndoEvent event = UndoQueue[UndoHead]; // make copy
-        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 1);
+        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, DoingUndo_Undo);
     }
 }
-void TryRedo()
+static void TryRedo()
 {
     unsigned RedoBufSize = (RedoHead + MaxUndo - RedoTail) % MaxUndo;
     if(RedoBufSize > 0)
     {
         RedoHead = (RedoHead + MaxUndo-1) % MaxUndo;
         UndoEvent event = RedoQueue[RedoHead]; // make copy
-        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, 2);
+        PerformEdit(event.x, event.y, event.n_delete, event.insert_chars, DoingUndo_Redo);
     }
 }
 
-void BlockIndent(int offset)
+static void BlockIndent(int offset)
 {
     unsigned firsty = BlockBegin.y, lasty = BlockEnd.y;
     if(BlockEnd.x == 0) lasty -= 1;
@@ -1198,7 +1218,7 @@ void BlockIndent(int offset)
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
 }
 
-void GetBlock(LongVecType& block)
+static void GetBlock(LongVecType& block)
 {
     for(unsigned y=BlockBegin.y; y<=BlockEnd.y; ++y)
     {
@@ -1211,7 +1231,7 @@ void GetBlock(LongVecType& block)
     }
 }
 
-void FindPair()
+static inline void FindPair()
 {
     int           PairDir  = 0;
     unsigned char PairChar = 0;
@@ -1254,7 +1274,7 @@ void FindPair()
         }
 }
 
-int SelectFont()
+static int SelectFont()
 {
     struct opt
     {
@@ -1438,7 +1458,7 @@ int SelectFont()
     return 1;
 }
 
-int VerifyUnsavedExit(const char* action)
+static int VerifyUnsavedExit(const char* action)
 {
     if(!UnsavedChanges) return 1;
     VisSoftCursor(-1);
@@ -1460,7 +1480,7 @@ int VerifyUnsavedExit(const char* action)
     VisRender();
     return decision;
 }
-int PromptText(const char* message, const char* deftext, char** result)
+static int PromptText(const char* message, const char* deftext, char** result)
 {
     const int arrow_left = 0x11, arrow_right = 0x10;
     char data[256] = { 0 };
@@ -1535,7 +1555,7 @@ int PromptText(const char* message, const char* deftext, char** result)
         }
     }
 }
-void InvokeSave(int ask_name)
+static void InvokeSave(int ask_name)
 {
     if(ask_name || !CurrentFileName)
     {
@@ -1574,7 +1594,7 @@ void InvokeSave(int ask_name)
     VisRenderTitleAndStatus();
     UnsavedChanges = false;
 }
-void InvokeLoad()
+static inline void InvokeLoad()
 {
     char* name = nullptr;
     int decision = PromptText("Load what:",
@@ -1595,7 +1615,7 @@ void InvokeLoad()
     RedoHead=RedoTail=0;
     UndoAppendOk=false;
 }
-void LineAskGo() // Go to line
+static inline void LineAskGo() // Go to line
 {
     unsigned DimY = VidH-1;
     char* line = nullptr;
@@ -1641,7 +1661,7 @@ void ResizeAsk() // Ask for new screen dimensions
     VidH = newh;
 }
 
-static void k_home(void)
+static inline void k_home(void)
 {
     unsigned indent = 0;
     while(indent < EditLines[Cur.y].size()
@@ -1669,7 +1689,7 @@ static void k_right(void)
     else if(Cur.y+1 < EditLines.size())
         { Cur.x = 0; ++Cur.y; }
 }
-static void k_ctrlleft(void)
+static inline void k_ctrlleft(void)
 {
     // Algorithm adapted from Joe 3.7
     #define at_line_end() (Cur.y >= EditLines.size() || Cur.x >= EditLines[Cur.y].size())
@@ -1689,7 +1709,7 @@ static void k_ctrlleft(void)
     #undef at_begin
     #undef at_line_end
 }
-static void k_ctrlright(void)
+static inline void k_ctrlright(void)
 {
     // Algorithm adapted from Joe 3.7
     #define at_line_end() (Cur.y >= EditLines.size() || Cur.x >= EditLines[Cur.y].size())
@@ -1729,6 +1749,11 @@ int main(int argc, char**argv)
     VisSetCursor();
 
 #if defined(__BORLANDC__) || defined(__DJGPP__)
+    // Read the rest of mode settings
+    // This should really be in vga.cc, but these assign
+    // global variables that are _not_ indicative of current mode,
+    // but dictate the next mode that will be set.
+    // (Although at this point in file they _are_ indicative of current mode.)
     outportb(0x3C4, 1); use9bit = !(inportb(0x3C5) & 1);
     outportb(0x3C4, 1); dblw    = (inportb(0x3C5) >> 3) & 1;
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
@@ -1782,7 +1807,7 @@ int main(int argc, char**argv)
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
                 /*if(Win.y + DimY > EditLines.size()
                 && EditLines.size() > DimY) Win.y = EditLines.size()-DimY;*/
-                if(shift && ENABLE_DRAG) dragalong = true;
+                if(ENABLE_DRAG && shift) dragalong = true;
                 break;
             }
             case CTRL('U'): // ctrl-U
@@ -1791,7 +1816,7 @@ int main(int argc, char**argv)
                 unsigned offset = Cur.y - Win.y;
                 if(Cur.y > DimY) Cur.y -= DimY; else Cur.y = 0;
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
-                if(shift && ENABLE_DRAG) dragalong = true;
+                if(ENABLE_DRAG && shift) dragalong = true;
                 break;
             }
             case CTRL('A'): goto home;
@@ -1915,12 +1940,7 @@ int main(int argc, char**argv)
                     case '\'': // Insert literal character
                     {
                         c = getch();
-                        LongVecType txtbuf(1, 0x0700 | (c & 0xFF));
-                        if( (c & 0xFF) == 0)
-                        {
-                            txtbuf.push_back( 0x0700 | (c >> 8) );
-                        }
-                        PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
+                        PerformEdit(InsertMode?0u:((c&0xFF)?1:2), 1u,c&0xFF,  (c&0xFF)?0u:1u, c>>8);
                         break;
                     }
                 }
@@ -1951,51 +1971,51 @@ int main(int argc, char**argv)
                     case 'H': // up
                         if(Cur.y > 0) --Cur.y;
                         if(Cur.y < Win.y) Win.y = Cur.y;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     case 'P': // down
                         if(Cur.y+1 < EditLines.size()) ++Cur.y;
                         if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     case 0x47: // home
                     {
                     home:
                         k_home();
                         Win.x = 0;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     }
                     case 0x4F: // end
                     end:
                         k_end();
                         Win.x = 0;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     case 'K': // left
                     {
                     lt_key:
                         k_left();
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     }
                     case 'M': // right
                     {
                     rt_key:
                         k_right();
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     }
                     case 0x73: // ctrl-left (go left on word boundary)
                     {
                         k_ctrlleft();
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     }
                     case 0x74: // ctrl-right (go right on word boundary)
                     {
                         k_ctrlright();
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     }
                     case 0x49: goto pgup;
@@ -2008,7 +2028,7 @@ int main(int argc, char**argv)
                     ctrlpgup:
                         Cur.y = Win.y = 0;
                         Cur.x = Win.x = 0;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     case 0x76: // ctrl-pgdn = goto end of file
                     ctrlpgdn:
@@ -2018,11 +2038,11 @@ int main(int argc, char**argv)
                         goto end;
                     case 0x77: // ctrl-home = goto beginning of window (vertically)
                         Cur.y = Win.y;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         break;
                     case 0x75: // ctrl-end = goto end of window (vertically)
                         Cur.y = Win.y + VidH-1;
-                        if(shift && ENABLE_DRAG) dragalong = true;
+                        if(ENABLE_DRAG && shift) dragalong = true;
                         // Hide the status line
                         StatusLine[0] = '\0';
                         break;
@@ -2032,8 +2052,7 @@ int main(int argc, char**argv)
                         unsigned eol_x = EditLines[Cur.y].size();
                         if(eol_x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n') --eol_x;
                         if(Cur.x > eol_x) { Cur.x = eol_x; break; } // just do end-key
-                        LongVecType empty;
-                        PerformEdit(Cur.x,Cur.y, 1u, empty);
+                        PerformEdit(1u, 0u, nullptr);
                         WasAppend = true;
                         break;
                     }
@@ -2133,13 +2152,11 @@ int main(int argc, char**argv)
             case CTRL('Y'): // erase line
             {
                 Cur.x = 0;
-                LongVecType empty;
-                PerformEdit(Cur.x,Cur.y, EditLines[Cur.y].size(), empty);
+                PerformEdit(EditLines[Cur.y].size(), 0u, nullptr);
                 break;
             }
             case CTRL('H'): // backspace = left + delete
             {
-                LongVecType empty;
                 unsigned nspaces = 0;
                 while(nspaces < EditLines[Cur.y].size()
                    && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
@@ -2147,7 +2164,7 @@ int main(int argc, char**argv)
                 {
                     nspaces = 1 + (Cur.x-1) % TabSize;
                     Cur.x -= nspaces;
-                    PerformEdit(Cur.x,Cur.y, nspaces, empty);
+                    PerformEdit(nspaces, 0u, nullptr);
                 }
                 else
                 {
@@ -2158,7 +2175,7 @@ int main(int argc, char**argv)
                         Cur.x = EditLines[Cur.y].size();
                         if(Cur.x > 0) --Cur.x; // past LF
                     }
-                    PerformEdit(Cur.x,Cur.y, 1u, empty);
+                    PerformEdit(1u, 0u, nullptr);
                 }
                 WasAppend = true;
                 break;
@@ -2168,8 +2185,7 @@ int main(int argc, char**argv)
             case CTRL('I'):
             {
                 unsigned nspaces = TabSize - Cur.x % TabSize;
-                LongVecType txtbuf(nspaces, 0x0720);
-                PerformEdit(Cur.x,Cur.y, InsertMode?0u:nspaces, txtbuf);
+                PerformEdit(InsertMode?0u:nspaces, nspaces,' ');
                 break;
             }
             case CTRL('M'): // enter
@@ -2183,17 +2199,14 @@ int main(int argc, char**argv)
                        && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
                     if(Cur.x < nspaces) nspaces = Cur.x;
                 }
-                LongVecType txtbuf(nspaces + 1, 0x0720);
-                txtbuf[0] = 0x070A; // newline
-                PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
+                PerformEdit(InsertMode?0u:1u, 1,'\n', nspaces,' ');
                 //Win.x = 0;
                 WasAppend = true;
                 break;
             }
             default:
             {
-                LongVecType txtbuf(1, 0x0700 | c);
-                PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
+                PerformEdit(InsertMode?0u:1u, 1, c);
                 WasAppend = true;
                 break;
             }
