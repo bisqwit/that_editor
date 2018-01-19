@@ -1423,6 +1423,17 @@ int main(int argc, char**argv)
                         LineAskGo();
                         break;
                     }
+                    case '\'': // Insert literal character
+                    {
+                        c = getch();
+                        WordVecType txtbuf(1, 0x0700 | (c & 0xFF));
+                        if( (c & 0xFF) == 0)
+                        {
+                            txtbuf.push_back( 0x0700 | (c >> 8) );
+                        }
+                        PerformEdit(Cur.x,Cur.y, InsertMode?0u:1u, txtbuf);
+                        break;
+                    }
                 }
                 break;
             }
