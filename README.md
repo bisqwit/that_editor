@@ -228,8 +228,8 @@ that Norton tools used on DOS in order to render a graphical mouse cursor in tex
 
 ![Norton Defrag](pic/norton.png)
 
-It reads the font for those characters that are currently under Mario,
-treats those characters as bitmaps, adds Mario into them,
+It reads the font for those characters that are currently under ~~Mario~~ person,
+treats those characters as bitmaps, adds ~~Mario~~ person into them,
 and then installs the modified characters in the font and replaces
 the character indexes on screen in that spot to refer to the modified
 characters.
