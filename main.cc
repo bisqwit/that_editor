@@ -7,6 +7,8 @@
 
 #define CTRL(c) ((c) & 0x1F)
 
+static const int ENABLE_DRAG = 0;
+
 volatile unsigned long MarioTimer = 0;
 
 // Return just the filename part of pathfilename
@@ -1298,7 +1300,7 @@ int main(int argc, char**argv)
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
                 /*if(Win.y + DimY > EditLines.size()
                 && EditLines.size() > DimY) Win.y = EditLines.size()-DimY;*/
-                if(shift) dragalong = 1;
+                if(shift && ENABLE_DRAG) dragalong = 1;
                 break;
             }
             case CTRL('U'): // ctrl-U
@@ -1307,7 +1309,7 @@ int main(int argc, char**argv)
                 unsigned offset = Cur.y - Win.y;
                 if(Cur.y > DimY) Cur.y -= DimY; else Cur.y = 0;
                 Win.y = (Cur.y > offset) ? Cur.y-offset : 0;
-                if(shift) dragalong = 1;
+                if(shift && ENABLE_DRAG) dragalong = 1;
                 break;
             }
             case CTRL('A'): goto home;
@@ -1466,12 +1468,12 @@ int main(int argc, char**argv)
                     case 'H': // up
                         if(Cur.y > 0) --Cur.y;
                         if(Cur.y < Win.y) Win.y = Cur.y;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 'P': // down
                         if(Cur.y+1 < EditLines.size()) ++Cur.y;
                         if(Cur.y >= Win.y+DimY) Win.y = Cur.y - DimY+1;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 0x47: // home
                     {
@@ -1483,7 +1485,7 @@ int main(int argc, char**argv)
                     home:
                         k_home();
                         Win.x = 0;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
                     case 0x4F: // end
@@ -1494,7 +1496,7 @@ int main(int argc, char**argv)
                     end:
                         k_end();
                         Win.x = 0;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 'K': // left
                     {
@@ -1505,7 +1507,7 @@ int main(int argc, char**argv)
                             else if(Cur.y > 0) { --Cur.y; k_end(); } } while(0)
                     lt_key:
                         k_left();
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
                     case 'M': // right
@@ -1517,7 +1519,7 @@ int main(int argc, char**argv)
                                 { Cur.x = 0; ++Cur.y; } } while(0)
                     rt_key:
                         k_right();
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
                     case 0x73: // ctrl-left (go left on word boundary)
@@ -1527,7 +1529,7 @@ int main(int argc, char**argv)
                         while( (Cur.x > 0 || Cur.y > 0)
                             && isalnum(EditLines[Cur.y][Cur.x]&0xFF));
                         k_right();
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
                     case 0x74: // ctrl-right (go right on word boundary)
@@ -1540,7 +1542,7 @@ int main(int argc, char**argv)
                         while( Cur.y < EditLines.size()
                             && Cur.x < EditLines[Cur.y].size()
                             && !isalnum(EditLines[Cur.y][Cur.x]&0xFF) );
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     }
                     case 0x49: goto pgup;
@@ -1553,7 +1555,7 @@ int main(int argc, char**argv)
                     ctrlpgup:
                         Cur.y = Win.y = 0;
                         Cur.x = Win.x = 0;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 0x76: // ctrl-pgdn = goto end of file
                     ctrlpgdn:
@@ -1563,11 +1565,11 @@ int main(int argc, char**argv)
                         goto end;
                     case 0x77: // ctrl-home = goto beginning of window (vertically)
                         Cur.y = Win.y;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 0x75: // ctrl-end = goto end of window (vertically)
                         Cur.y = Win.y + VidH-1;
-                        if(shift) dragalong = 1;
+                        if(shift && ENABLE_DRAG) dragalong = 1;
                         break;
                     case 0x53: // delete
                     delkey:
