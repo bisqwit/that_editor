@@ -1277,7 +1277,7 @@ void InvokeLoad()
     RedoHead=RedoTail=0;
     UndoAppendOk=0;
 }
-void LineAskGo()
+void LineAskGo() // Go to line
 {
     unsigned DimY = VidH-1;
     char* line = 0;
@@ -1298,6 +1298,22 @@ void LineAskGo()
     Win.x = 0;
     VisRenderStatus();
     VisRender();
+}
+void ResizeAsk() // Ask for new screen dimensions
+{
+    char* line = 0;
+    char Buf[64] = "";
+    int neww=0, newh=0;
+    sprintf(Buf, "%u %u", VidW, VidH);
+    int decision = PromptText("Enter new screen dimensions:", Buf, &line);
+    int n = line ? sscanf(line, "%d %d", &neww,&newh) : 0;
+    if(!decision || !line || !*line || n != 2 || neww < 8 || neww > 160 || newh < 4 || newh > 132)
+    {
+        if(line) free(line);
+        return;
+    }
+    VidW = neww;
+    VidH = newh;
 }
 
 int main(int argc, char**argv)
@@ -1632,6 +1648,8 @@ int main(int argc, char**argv)
                     case 0x75: // ctrl-end = goto end of window (vertically)
                         Cur.y = Win.y + VidH-1;
                         if(shift && ENABLE_DRAG) dragalong = 1;
+                        // Hide the status line
+                        StatusLine[0] = '\0';
                         break;
                     case 0x53: // delete
                     delkey:
@@ -1644,7 +1662,10 @@ int main(int argc, char**argv)
                         WasAppend = 1;
                         break;
                     }
-                    case 0x3B: VidH -= 1; goto newmode; // F1
+                    case 0x54: shiftF1:
+                               ResizeAsk(); goto newmode;
+                    case 0x3B: if(shift) goto shiftF1;
+                               VidH -= 1; goto newmode; // F1
                     case 0x3C: VidH += 1; goto newmode; // F2
                     case 0x3D: VidW -= 2; goto newmode; // F3
                     case 0x3E: VidW += 2; goto newmode; // F4
