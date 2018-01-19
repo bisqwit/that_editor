@@ -101,7 +101,7 @@ static const char Mario32[] =
 
 static unsigned OverlayMarioByte(
     unsigned pose,
-    register unsigned y,
+    register unsigned y, register unsigned absx,
     register unsigned char OriginalByte,
     signed int MarioOffset)
 {
@@ -122,12 +122,12 @@ static unsigned OverlayMarioByte(
 
     static const unsigned char dither4x4[16] =
         {0,12,3,15, 8,4,11,7, 2,14,1,13, 10,6,9,5};
-    const unsigned char* dithline = dither4x4 + ((y & 3u) * 4u);
+    const unsigned char* dithline = dither4x4 + (((y+MarioTimer) & 3u) * 4u);
 
     unsigned char byte = 0x00;
     for(register unsigned x=0; x<8; ++x)
     {
-        unsigned char dithval = dithline[ x&3 ];
+        unsigned char dithval = dithline[ (x+absx)&3 ];
         register unsigned char bit = 1;
         switch(*data++ / 3)
         {
@@ -172,7 +172,7 @@ void MarioTranslate(
     const unsigned room_wide   = width * (FatMode ? 16 : 8);
     const unsigned xspanlength = room_wide + room_left + room_right;
     //const unsigned twospans = xspanlength * 2u;
-    unsigned long mt = MarioTimer / 1;
+    unsigned long mt = MarioTimer / 2;
     const unsigned poses = (VidCellHeight >= 29) ? 4u : 2u;
 
     const unsigned MarioStepInterval = VidCellHeight >= 29 ? 5 : 7;
@@ -222,11 +222,12 @@ void MarioTranslate(
         for(unsigned y=0; y<VidCellHeight; ++y)
         {
             RevisedFontData[fontdatasize++] =
-                OverlayMarioByte(marioframe,y, SourceFontPtr[y], offset);
+                OverlayMarioByte(marioframe,y,mariox, SourceFontPtr[y], offset);
         }
         model[basex >> 3] = (ch & 0xF000u) | chartable[numchars++];
     }
 
+    memcpy(target, model, room_wide/4);
 #ifdef __BORLANDC__
     if(numchars > 0)
     {
@@ -258,11 +259,10 @@ void MarioTranslate(
         }
     }
 #endif
-    memcpy(target, model, room_wide/4);
 }
 
 #ifdef __BORLANDC__
-static unsigned rate=60U, Clock=0u, Counter=0x1234DCUL/rate;
+static unsigned short rate=120U, Clock=0u, Counter=0x1234DCUL/rate;
 static void (interrupt *OldI08)();
 static void interrupt MarioI08()
 {
@@ -279,16 +279,24 @@ P2:;
 }
 #endif
 
-void InstallMario()
+void FixMarioTimer()
 {
 #ifdef __BORLANDC__
     disable();
-    (void *)OldI08 = *(void **)MK_FP(0, 8*4);
-    *(void **)MK_FP(0, 8*4) = (void *)MarioI08;
     _asm { mov al, 0x34;    out 0x43, al
            mov ax, Counter; out 0x40, al
            mov al, ah;      out 0x40, al }
     enable();
+#endif
+}
+
+void InstallMario()
+{
+#ifdef __BORLANDC__
+    disable();
+    OldI08 = (void(interrupt*)()) *(void **)MK_FP(0, 8*4);
+    *(void **)MK_FP(0, 8*4) = (void *)MarioI08;
+    FixMarioTimer();
 #endif
 }
 

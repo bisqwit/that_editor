@@ -1256,7 +1256,7 @@ int main(int argc, char**argv)
     outportb(0x3D4, 9); dblh    = inportb(0x3D5) >> 7;
 #endif
 
-    unsigned long StatusLineProtection = 0;
+    unsigned long StatusLineProtection = MarioTimer + 200u;
 
     for(;;)
     {
@@ -1618,7 +1618,7 @@ int main(int argc, char**argv)
                             sprintf(StatusLine, "READY%*s", VidW-5, res);
                         }
                         VisRenderStatus();
-                        StatusLineProtection = MarioTimer + 100u;
+                        StatusLineProtection = MarioTimer + 200u;
                         break;
                     case 0x43: // F9
                         C64palette = !C64palette;
