@@ -8,7 +8,7 @@ unsigned short VidMem[256*256];
 unsigned char VidW=80, VidH=25, VidCellHeight=16;
 double VidFPS = 60.0;
 const unsigned char* VgaFont = 0;
-int C64palette = 0, FatMode = 0, DispUcase;
+int C64palette = 0, FatMode = 0, DispUcase = 0, DCPUpalette = 1;
 
 static const unsigned char c64font[8*(256-64)] = {
 #include "c64font.inc"
@@ -28,6 +28,9 @@ static const unsigned char p15font[15*256] = {
 static const unsigned char p32wfont[32*256] = {
 #include "16x32.inc"
 };
+static const unsigned char dcpu16font[8*256] = {
+#include "4x8.inc"
+};
 
 void VgaGetFont()
 {
@@ -36,6 +39,7 @@ void VgaGetFont()
     {
         case 8:
             if(C64palette) { VgaFont = c64font-8*32; return; }
+            if(DCPUpalette) { VgaFont = dcpu16font; return; }
             mode = 3; break;
         case 14: mode = 2; break;
         case 16: mode = 6; break;
@@ -101,12 +105,32 @@ void VgaSetMode(unsigned modeno)
         0xD0DC71ul,
         0x7ABFC7ul
     };
+    static const unsigned long dcpu16pal[16] =
+    {
+        0x000000ul,0x005784ul,0x44891Aul,0x2F484Eul,
+        0xBE2633ul,0x493C2Bul,0xA46422ul,0x9D9D9Dul,
+        0x1B2632ul,0x31A2F2ul,0xA3CE27ul,0xB2DCEFul,
+        0xE06F8Bul,0xEB8931ul,0xFFE26Bul,0xFFFFFFul
+    };
+
+    static const unsigned long primerpal[16] =
+    {
+        0x000000ul,0x00005Ful,0x68A141ul,0x7ABFC7ul,
+        0xD75F5Ful,0x493C2Bul,0xA46422ul,0xD7D7D7ul,
+        0x878787ul,0x31A2F2ul,0xA3CE27ul,0xB2DCEFul,
+        0xFFAF5Ful,0xAF5FFFul,0xFFFFAFul,0xFFFFFFul
+    };
+
+    const unsigned long* extra_pal = c64pal;
+    if(!C64palette) extra_pal = dcpu16pal;
+    extra_pal = primerpal; // Special Primer version
+
     outportb(0x3C8, 0x20);
     for(unsigned a=0; a<16; ++a)
     {
-        outportb(0x3C9, c64pal[a] >> 18);
-        outportb(0x3C9, (c64pal[a] >> 10) & 0x3F);
-        outportb(0x3C9, (c64pal[a] >> 2) & 0x3F);
+        outportb(0x3C9, extra_pal[a] >> 18);
+        outportb(0x3C9, (extra_pal[a] >> 10) & 0x3F);
+        outportb(0x3C9, (extra_pal[a] >> 2) & 0x3F);
     }
 #endif
 }
@@ -167,6 +191,23 @@ void VgaSetCustomMode(
     if(font_height ==14) { _asm { mov ax, 0x1101; mov bl, 0; int 0x10 } }
     if(font_height == 8) {
         _asm { mov ax, 0x1102; mov bl, 0; int 0x10 }
+        if(DCPUpalette)
+        {
+            _asm {
+                push es
+                push bp
+                 mov ax, seg dcpu16font
+                 mov es, ax
+                 mov bp, offset dcpu16font
+                 mov ax, 0x1100
+                 mov bx, 0x0800
+                 mov cx, 256
+                 mov dx, 0
+                 int 0x10
+                pop bp
+                pop es
+            }
+        }
         if(C64palette)
         {
             _asm {
@@ -321,7 +362,7 @@ void VgaSetCustomMode(
     {unsigned char Att[0x15] = { 0x00,0x01,0x02,0x03,0x04,0x05,0x14,0x07,
                                  0x38,0x39,0x3A,0x3B,0x3C,0x3D,0x3E,0x3F,
                                  is_9pix*4, 0, 0x0F, is_9pix*8, 0 };
-    if(C64palette)
+    //if(C64palette || (DCPUpalette && font_height == 8)) //DCPU hack
     {
         for(unsigned a=0; a<0x10; ++a) Att[a] = 0x20+a;
     }

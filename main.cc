@@ -1119,6 +1119,7 @@ int SelectFont()
     VidH          = options[sel_y].h[sel_x];
     use9bit = (options[sel_y].px == 9) || (options[sel_y].px == 18);
     FatMode = options[sel_y].px >= 16;
+    if(VidCellHeight != 8) DCPUpalette = 0;
     return 1;
 }
 
