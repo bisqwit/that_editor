@@ -116,6 +116,7 @@ void FileLoad(char* fn)
 
     int hadnl = 1;
     WordVecType editline;
+    int got_cr = 0;
     for(;;)
     {
         unsigned char Buf[512];
@@ -123,26 +124,33 @@ void FileLoad(char* fn)
         if(r == 0) break;
         for(size_t a=0; a<r; ++a)
         {
-            if(Buf[a] == '\r' && Buf[a+1] == '\n') continue;
-            if(Buf[a] == '\r') Buf[a] = '\n';
-            if(Buf[a] == '\t')
+            if(Buf[a] == '\r' && !got_cr) { got_cr = 1; continue; }
+            int maxrepeat = (got_cr && Buf[a] != '\n') ? 2 : 1;
+            for(int repeat=0; repeat<maxrepeat; ++repeat)
             {
-                size_t nextstop = editline.size() + TabSize;
-                nextstop -= nextstop % TabSize;
-                editline.resize(nextstop, UnknownColor | 0x20);
-                /*while(editline.size() < nextstop)
-                    editline.push_back( UnknownColor | 0x20 );*/
-            }
-            else
-                editline.push_back( UnknownColor | Buf[a] );
+                unsigned char c = Buf[a];
+                if(repeat == 0 && got_cr) c = '\n';
 
-            hadnl = 0;
-            if(Buf[a] == '\n')
-            {
-                EditLines.push_back(editline);
-                editline.clear();
-                hadnl = 1;
+                if(c == '\t')
+                {
+                    size_t nextstop = editline.size() + TabSize;
+                    nextstop -= nextstop % TabSize;
+                    editline.resize(nextstop, UnknownColor | 0x20);
+                    /*while(editline.size() < nextstop)
+                        editline.push_back( UnknownColor | 0x20 );*/
+                }
+                else
+                    editline.push_back( UnknownColor | c );
+
+                hadnl = 0;
+                if(c == '\n')
+                {
+                    EditLines.push_back(editline);
+                    editline.clear();
+                    hadnl = 1;
+                }
             }
+            got_cr = Buf[a] == '\r';
         }
     }
     if(hadnl)
