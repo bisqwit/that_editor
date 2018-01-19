@@ -1398,6 +1398,10 @@ int main(int argc, char**argv)
                             InvokeLoad();
                         break;
                     }
+                    case 'n': case 'N': case CTRL('N'): // new file
+                        FileNew();
+                        Syntax.Parse("conf.jsf");
+                        break;
                     case 'u': case 'U': case CTRL('U'): // ctrl-pgup
                         goto ctrlpgup;
                     case 'v': case 'V': case CTRL('V'): // ctrl-pgdn
