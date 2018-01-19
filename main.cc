@@ -551,7 +551,7 @@ void WaitInput(int may_redraw = 1)
             if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
             || SyntaxCheckingNeeded == SyntaxChecking_DoingFull)
             {
-               // _asm { hlt }
+               _asm { hlt }
             }
         #endif
         } while(!kbhit());
