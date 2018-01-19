@@ -525,7 +525,7 @@ void WaitInput(int may_redraw = 1)
                         if( horrible_sight)
                             line = Win.y;
                         else if(SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
-                            line = Win.y>40 ? Win.y-40 : 0;
+                            line = Win.y>7 ? Win.y-7 : 0;
 
                         Syntax.ApplyInit(SyntaxCheckingState);
                         SyntaxCheckingApplier.Reset(line);
