@@ -212,17 +212,15 @@ void MarioTranslate(
 
     unsigned char RevisedFontData[ 6 * 32 ];
 
-    const unsigned MarioColor = 0x0800;
-
     const unsigned base = FatMode ? 0x80 : 0xC0;
 
-    const unsigned short chartable[6] =
-        { (unsigned short)(base + 0x0 + MarioColor),
-          (unsigned short)(base + 0x3 + MarioColor),
-          (unsigned short)(base + 0x4 + MarioColor),
-          (unsigned short)(base + 0x8 + MarioColor),
-          (unsigned short)(base + 0x9 + MarioColor),
-          (unsigned short)(base + 0xD + MarioColor)
+    const EditorCharType chartable[6] =
+        { MakeMarioColor(base + 0x0),
+          MakeMarioColor(base + 0x3),
+          MakeMarioColor(base + 0x4),
+          MakeMarioColor(base + 0x8),
+          MakeMarioColor(base + 0x9),
+          MakeMarioColor(base + 0xD)
         };
 
     unsigned fontdatasize  = 0;
@@ -251,7 +249,7 @@ void MarioTranslate(
             RevisedFontData[fontdatasize++] =
                 OverlayMarioByte(marioframe,y,mariox, SourceFontPtr[y], offset);
         }
-        model[basex >> 3] = ChangeForegroundToDarkGray(Recolor(chartable[numchars++], word));
+        model[basex >> 3] = RecolorBgOnly(chartable[numchars++], word);
     }
 
     for(unsigned p=room_wide/8; p-- > 0u; )
@@ -292,6 +290,7 @@ void MarioTranslate(
 #ifdef __DJGPP__
     if(numchars > 0)
     {
+        // Remap 00, 03-04, 08-09 and 0D
         VgaEnableFontAccess();
         VgaSetFont(VidCellHeight, 1, base+0x0, RevisedFontData+0);
         VgaSetFont(VidCellHeight, 2, base+0x3, RevisedFontData+VidCellHeight);

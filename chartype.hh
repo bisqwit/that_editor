@@ -123,6 +123,11 @@ static inline EditorCharType MakeMenuColor(unsigned char ch)
     return ch | 0x7000;//ComposeEditorChar('\0', 0,7);
 }
 
+static inline EditorCharType MakeMarioColor(unsigned char ch)
+{
+    return ch | 0x0800;//ComposeEditorChar('\0', 8,0);
+}
+
 static /*inline*/ EditorCharType InvertColor(EditorCharType ch)
 {
     if(sizeof(EditorCharType) > 2 && (ch & 0x80008000ul) == 0x80008000ul)
@@ -136,17 +141,11 @@ static /*inline*/ EditorCharType InvertColor(EditorCharType ch)
     }
 }
 
-static inline EditorCharType ChangeForegroundToDarkGray(EditorCharType ch)
+static inline EditorCharType RecolorBgOnly(EditorCharType ch, EditorCharType attr)
 {
-    if(sizeof(EditorCharType) > 2 && (ch & 0x80008000ul) == 0x80008000ul)
-    {
-        return ComposeEditorChar(ch, 8, (ch>>16), ch>>24);
-    }
-    else
-    {
-        //return ComposeEditorChar(ch, 8, (ch>>8)&0xF, ch>>24);
-        return (ch & ~EditorCharType(0xF00u)) | 0x0800u;
-    }
+    if(sizeof(EditorCharType) > 2)
+        return (ch & ~0x00FF0000ul) | (attr & 0x00FF0000ul) | 0x80008000ul;
+    return (ch & ~0xF000u) | (attr & 0xF000u);
 }
 
 static inline void VidmemPutEditorChar(EditorCharType ch, unsigned short*& Tgt)
