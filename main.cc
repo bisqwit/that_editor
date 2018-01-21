@@ -8,12 +8,9 @@
 #include "langdefs.hh"
 #include "kbhit.hh"
 
-#include "vec_c.hh"
-#include "vec_s.hh"
-#include "vec_lp.hh"
-
-#include "jsf.hh"
 #include "vga.hh"
+#include "chartype.hh"
+#include "jsf.hh"
 
 #include "cpu.h"
 
@@ -59,12 +56,10 @@ const char* fnpart(const char* fn)
     return fn;
 }
 
-const unsigned UnknownColor = 0x2400;
-
 char StatusLine[256] = // WARNING: Not range-checked
 "Ad-hoc programming editor - (C) 2011-03-08 Joel Yliluoma";
 
-LongPtrVecType EditLines;
+EditorLineVecType EditLines;
 
 struct Anchor
 {
@@ -102,7 +97,7 @@ static void FileLoad(const char* fn)
     EditLines.clear();
 
     int hadnl = 1;
-    LongVecType editline;
+    EditorCharVecType editline;
     int got_cr = 0;
     for(;;)
     {
@@ -122,12 +117,12 @@ static void FileLoad(const char* fn)
                 {
                     size_t nextstop = editline.size() + TabSize;
                     nextstop -= nextstop % TabSize;
-                    editline.resize(nextstop, UnknownColor | 0x20);
+                    editline.resize(nextstop, MakeUnknownColor(' '));
                     /*while(editline.size() < nextstop)
-                        editline.push_back( UnknownColor | 0x20 );*/
+                        editline.push_back( MakeUnknownColor(' ') );*/
                 }
                 else
-                    editline.push_back( UnknownColor | c );
+                    editline.push_back( MakeUnknownColor(c) );
 
                 hadnl = 0;
                 if(c == '\n')
@@ -157,8 +152,8 @@ static void FileNew()
 {
     Win = Cur = Anchor();
     EditLines.clear();
-    LongVecType emptyline;
-    emptyline.push_back('\n' | UnknownColor);
+    EditorCharVecType emptyline;
+    emptyline.push_back(MakeUnknownColor('\n'));
     EditLines.push_back(emptyline);
     EditLines.push_back(emptyline);
     EditLines.push_back(emptyline);
@@ -173,7 +168,7 @@ struct ApplyEngine: public JSF::Applier
     unsigned nlinestotal, nlines;
     size_t x,y, begin_line;
     unsigned pending_recolor_distance, pending_recolor;
-    unsigned long pending_attr;
+    EditorCharType pending_attr;
     ApplyEngine()
         { Reset(0); }
     void Reset(size_t line)
@@ -189,7 +184,7 @@ struct ApplyEngine: public JSF::Applier
             FlushColor();
             return -1;
         }
-        int ret = EditLines[y][x] & 0xFF;
+        int ret = ExtractCharCode(EditLines[y][x]);
         if(ret == '\n')
         {
             if(kbhit()) { return -1; }
@@ -209,7 +204,7 @@ struct ApplyEngine: public JSF::Applier
      * n        = Number of last characters to apply that attribute for
      * distance = Extra number of characters to count and skip
      */
-    virtual cdecl void Recolor(register unsigned distance, register unsigned n, register unsigned long attr)
+    virtual cdecl void Recolor(register unsigned distance, register unsigned n, register EditorCharType attr)
     {
         /* Flush the previous req, unless this new req is a super-set of the previous request */
         if(pending_recolor > 0)
@@ -225,19 +220,19 @@ struct ApplyEngine: public JSF::Applier
         }
         pending_recolor_distance = distance;
         pending_recolor          = n;
-        pending_attr             = attr << 8;
+        pending_attr             = attr;
     }
 private:
     void FlushColor()
     {
-        register unsigned dist      = pending_recolor_distance;
-        register unsigned n         = pending_recolor;
-        register unsigned long attr = pending_attr;
+        register unsigned dist       = pending_recolor_distance;
+        register unsigned n          = pending_recolor;
+        register EditorCharType attr = pending_attr;
         if(n > 0)
         {
             //fprintf(stdout, "Recolors %u as %02X\n", n, attr);
             size_t px=x, py=y;
-            LongVecType* line = &EditLines[py];
+            EditorCharVecType* line = &EditLines[py];
             for(n += dist; n > 0; --n)
             {
                 if(px == 0) { if(!py) break; line = &EditLines[--py]; px = line->size()-1; }
@@ -246,8 +241,8 @@ private:
                     --dist;
                 else
                 {
-                    unsigned long& w = (*line)[px];
-                    w = (w & 0xFF) | attr;
+                    EditorCharType& w = (*line)[px];
+                    w = ::Recolor(w, attr);
                 }
             }
         }
@@ -472,10 +467,18 @@ public:
         unsigned char ch = 0xDC;
 */
 
+#ifdef ATTRIBUTE_CODES_IN_ANSI_ORDER
 static const unsigned char  slide1_colors[21] = {6,73,109,248,7,7,7,7,7,248,109,73,6,6,6,36,35,2,2,28,22};
 static const unsigned short slide1_positions[21] = {0u,1401u,3711u,6302u,7072u,8192u,16384u,24576u,32768u,33889u,34659u,37250u,39560u,40960u,49152u,50903u,53634u,55944u,57344u,59937u,63981u};
 static const unsigned char  slide2_colors[35] = {248,7,249,250,251,252,188,253,254,255,15,230,229,228,227,11,227,185,186,185,179,143,142,136,100,94,58,239,238,8,236,235,234,233,0};
 static const unsigned short slide2_positions[35] = {0u,440u,1247u,2126u,3006u,3886u,4839u,5938u,6965u,8064u,9750u,12590u,15573u,18029u,19784u,21100u,24890u,27163u,30262u,35051u,35694u,38054u,40431u,41156u,46212u,46523u,50413u,52303u,53249u,54194u,56294u,58815u,61335u,63856u,64696u};
+#endif
+#ifdef ATTRIBUTE_CODES_IN_VGA_ORDER
+static const unsigned char  slide1_colors[12] = {3,7,7,7,7,7,3,3,3,2,2,2};
+static const unsigned short slide1_positions[12] = {0u,4132u,8192u,16384u,24576u,32768u,36829u,40960u,49152u,52583u,53876u,57344u};
+static const unsigned char  slide2_colors[11] = {7,15,15,14,14,14,6,6,8,8,0};
+static const unsigned short slide2_positions[11] = {0u,5541u,10923u,16363u,21846u,32768u,38151u,43691u,49153u,54614u,59655u};
+#endif
 
 static ColorSlideCache slide1(slide1_colors, slide1_positions, sizeof(slide1_colors));
 static ColorSlideCache slide2(slide2_colors, slide2_positions, sizeof(slide2_colors));
@@ -509,16 +512,7 @@ static void VisRenderStatusLine()
                 case 0: c1 = 8; break;
             }*/
 
-        unsigned short colorlo = ch | 0x8000u | (c2 << 8u);
-        unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
-
-        if(FatMode)
-            { Stat[x+x] = colorlo; Stat[x+x+1] = colorlo|0x80; }
-        else
-        {
-            Stat[x] = colorlo;
-            Stat[x+(DOSBOX_HICOLOR_OFFSET/2)] = colorhi;
-        }
+        VidmemPutEditorChar(ComposeEditorChar(ch, c2, c1), Stat);
         if(StatusLine[p]) ++p;
     }
 }
@@ -666,7 +660,7 @@ static void VisRenderTitleAndStatus()
     }
 
     // Now render the actual status line into Hdr[] with colors.
-    static LongVecType Hdr; Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
+    static EditorCharVecType Hdr; Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
 
     slide1.SetWidth(StatusWidth);
     for(unsigned x=0; x<StatusWidth; ++x)
@@ -701,11 +695,7 @@ static void VisRenderTitleAndStatus()
                 case 0: c1 = 8; break;
             }*/
 
-        unsigned short colorlo = ch | 0x8000u | (c2 << 8u);
-        unsigned short colorhi = c1 | 0x8000u | ((c2 & 0x80u) << 7u);
-
-        if(FatMode) { Hdr[x+x] = colorlo; Hdr[x+x+1] = colorlo|0x80; }
-        else        { Hdr[x] = colorlo | (((unsigned long)colorhi) << 16u); }
+        Hdr[x] = ComposeEditorChar(ch, c2, c1);
     }
     // Then translate the Hdr[] buffer on screen using MarioTranslate.
     MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);
@@ -716,7 +706,7 @@ static void VisRenderTitleAndStatus()
 /* VisRender: Render whole screen except the status line */
 static void VisRender()
 {
-    static LongVecType EmptyLine; // Dummy vector representing an empty line
+    static EditorCharVecType EmptyLine; // Dummy vector representing an empty line
 
     // Hide soft-cursor
     VisSoftCursor(-1);
@@ -729,15 +719,15 @@ static void VisRender()
 
         unsigned ly = Win.y + y;
 
-        LongVecType* line = &EmptyLine;
+        EditorCharVecType* line = &EmptyLine;
         if(ly < EditLines.size()) line = &EditLines[ly];
 
         unsigned lw = line->size(), lx=0, x=Win.x, xl=x + VidW;
-        unsigned trail = 0x0720;
+        EditorCharType trail = MakeDefaultColor(' ');
         for(unsigned l=0; l<lw; ++l)
         {
-            unsigned long attr = (*line)[l];
-            if( (attr & 0xFF) == '\n' ) break;
+            EditorCharType attr = (*line)[l];
+            if(ExtractCharCode(attr) == '\n') break;
             ++lx;
             if(lx > x)
             {
@@ -746,39 +736,16 @@ static void VisRender()
                 &&  ((ly == BlockEnd.y && lx-1 < BlockEnd.x)
                   || ly < BlockEnd.y) )
                 {
-                    if((attr & 0x80008000ul) == 0x80008000ul)
-                    {
-                        unsigned char bg = (attr >> 16) & 0xFF;
-                        unsigned char fg = ((attr >> 8) & 0x7F) | ((attr >> 23) & 0x80);
-                        attr &= 0xBF0080FFul;
-                        attr |= ((unsigned long)fg) << 16;
-                        attr |= ((unsigned long)bg) << 8;
-                        if(bg & 0x80) attr |= 0x40000000ul;
-                    }
-                    else
-                    {
-                        attr = (attr & 0xFF0000FFul)
-                             | ((attr >> 4u) & 0xF00u)
-                             | ((attr << 4u) & 0xF000u);
-                    }
+                    attr = InvertColor(attr);
                 }
-                if(DispUcase && islower(attr & 0xFF))
+                if(DispUcase && islower(ExtractCharCode(attr)))
                     attr &= ~0x20ul;
 
-                do {
-                    Tgt[(DOSBOX_HICOLOR_OFFSET/2)] = (attr >> 16);
-                    *Tgt++ = attr;
-                    if(FatMode) *Tgt++ = attr | 0x80;
-                } while(lx > ++x);
+                do VidmemPutEditorChar(attr, Tgt); while(lx > ++x);
                 if(x >= xl) break;
             }
         }
-        while(x++ < xl)
-        {
-            Tgt[(DOSBOX_HICOLOR_OFFSET/2)] = 0;
-            *Tgt++ = trail;
-            if(FatMode) *Tgt++ = trail | 0x80;
-        }
+        while(x++ < xl) VidmemPutEditorChar(trail, Tgt);
     }
 
     // Redraw soft-cursor
@@ -848,8 +815,8 @@ static void WaitInput(bool may_redraw = true)
             if(SyntaxCheckingNeeded != SyntaxChecking_IsPerfect)
             {
                 bool horrible_sight =
-                    (VidMem[VidW * 2] & 0xFF00u) == UnknownColor ||
-                    (VidMem[VidW * (VidH*3/4)] & 0xFF00u) == UnknownColor;
+                    ExtractColor(VidmemReadEditorChar(VidMem+VidW*2))          == MakeUnknownColor('\0')
+                ||  ExtractColor(VidmemReadEditorChar(VidMem+VidW*(VidH*3/4))) == MakeUnknownColor('\0');
                 /* If the sight on the very screen currently
                  * is "horrible", do, as a quick fix, a scan
                  * of the current screen to at least make it
@@ -914,7 +881,7 @@ struct UndoEvent
 {
     unsigned x, y;
     unsigned n_delete;
-    LongVecType insert_chars;
+    EditorCharVecType insert_chars;
 };
 const unsigned   MaxUndo = 256;
 UndoEvent UndoQueue[MaxUndo];
@@ -982,11 +949,11 @@ enum UndoType
 static void PerformEdit(
     unsigned x, unsigned y,
     unsigned n_delete,
-    const LongVecType& insert_chars,
+    const EditorCharVecType& insert_chars,
     UndoType DoingUndo = DoingUndo_Not)
 {
     unsigned eol_x = EditLines[y].size();
-    if(eol_x > 0 && (EditLines[y].back() & 0xFF) == '\n') --eol_x;
+    if(eol_x > 0 && ExtractCharCode(EditLines[y].back()) == '\n') --eol_x;
     if(x > eol_x) x = eol_x;
 
     UndoEvent event;
@@ -1002,7 +969,7 @@ static void PerformEdit(
                                    int(UndoAppendOk), x,y,n_delete);
         for(unsigned b=insert_chars.size(), a=0; a<b && s<252; ++a)
         {
-            char c = insert_chars[a] & 0xFF;
+            char c = ExtractCharCode(insert_chars[a]);
             if(c == '\n') { StatusLine[s++] = '\\'; StatusLine[s++] = 'n'; }
             else StatusLine[s++] = c;
         }
@@ -1060,13 +1027,13 @@ static void PerformEdit(
 
         unsigned insert_newline_count = 0;
         {for(unsigned p=0; p<insert_length; ++p)
-            if( (insert_chars[p] & 0xFF) == '\n')
+            if(ExtractCharCode(insert_chars[p]) == '\n')
                 ++insert_newline_count; }
 
         if(insert_newline_count > 0)
         {
-            LongVecType nlvec(1, '\n' | UnknownColor);
-            LongPtrVecType new_lines( insert_newline_count, nlvec );
+            EditorCharVecType nlvec(1, MakeUnknownColor('\n'));
+            EditorLineVecType new_lines( insert_newline_count, nlvec );
             // Move the trailing part from current line to the beginning of last "new" line
             new_lines.back().assign( EditLines[y].begin() + x, EditLines[y].end() );
             // Remove the trailing part from that line
@@ -1091,12 +1058,12 @@ static void PerformEdit(
         unsigned insert_beginpos = 0;
         while(insert_beginpos < insert_length)
         {
-            if( (insert_chars[insert_beginpos] & 0xFF) == '\n')
+            if(ExtractCharCode(insert_chars[insert_beginpos]) == '\n')
                 { x = 0; ++y; ++insert_beginpos; }
             else
             {
                 unsigned p = insert_beginpos;
-                while(p < insert_length && (insert_chars[p] & 0xFF) != '\n')
+                while(p < insert_length && ExtractCharCode(insert_chars[p]) != '\n')
                     ++p;
 
                 unsigned n_inserted = p - insert_beginpos;
@@ -1137,15 +1104,15 @@ static void PerformEdit(
 
 static void PerformEdit(unsigned n_delete, unsigned n_insert, const unsigned char* insert_source)
 {
-    LongVecType txtbuf(n_insert);
-    for(unsigned n=0; n<n_insert; ++n) txtbuf[n] = insert_source[n] | 0x0700;
+    EditorCharVecType txtbuf(n_insert);
+    for(unsigned n=0; n<n_insert; ++n) txtbuf[n] = MakeDefaultColor(insert_source[n]);
     PerformEdit(Cur.x, Cur.y, n_delete, txtbuf);
 }
 static void PerformEdit(unsigned n_delete, unsigned n_insert1, unsigned char ch1, unsigned n_insert2=0, unsigned char ch2=0)
 {
-    LongVecType txtbuf(n_insert1 + n_insert2);
-    {for(unsigned n=0; n<n_insert1; ++n) txtbuf[n            ] = ch1 | 0x0700;}
-    {for(unsigned n=0; n<n_insert2; ++n) txtbuf[n + n_insert1] = ch2 | 0x0700;}
+    EditorCharVecType txtbuf(n_insert1 + n_insert2);
+    {for(unsigned n=0; n<n_insert1; ++n) txtbuf[n            ] = MakeDefaultColor(ch1);}
+    {for(unsigned n=0; n<n_insert2; ++n) txtbuf[n + n_insert1] = MakeDefaultColor(ch2);}
     PerformEdit(Cur.x, Cur.y, n_delete, txtbuf);
 }
 
@@ -1180,20 +1147,20 @@ static void BlockIndent(int offset)
     {
         unsigned indent = 0;
         while(indent < EditLines[y].size()
-           && (EditLines[y][indent] & 0xFF) == ' ') ++indent;
-        if((EditLines[y][indent] & 0xFF) == '\n') continue;
+           && ExtractCharCode(EditLines[y][indent]) == ' ') ++indent;
+        if(ExtractCharCode(EditLines[y][indent]) == '\n') continue;
         if(indent < min_indent) min_indent = indent;
         if(indent > max_indent) max_indent = indent;
     }
     if(offset > 0)
     {
-        LongVecType indentbuf(offset, UnknownColor | 0x20);
+        EditorCharVecType indentbuf(offset, MakeUnknownColor(' '));
         for(unsigned y=firsty; y<=lasty; ++y)
         {
             unsigned indent = 0;
             while(indent < EditLines[y].size()
-               && (EditLines[y][indent] & 0xFF) == ' ') ++indent;
-            if((EditLines[y][indent] & 0xFF) == '\n') continue;
+                  && ExtractCharCode(EditLines[y][indent]) == ' ') ++indent;
+            if(ExtractCharCode(EditLines[y][indent]) == '\n') continue;
             PerformEdit(0u,y, 0u, indentbuf);
         }
         if(BlockBegin.x > 0) BlockBegin.x += offset;
@@ -1202,13 +1169,13 @@ static void BlockIndent(int offset)
     else if(int(min_indent) >= -offset)
     {
         unsigned outdent = -offset;
-        LongVecType empty;
+        EditorCharVecType empty;
         for(unsigned y=firsty; y<=lasty; ++y)
         {
             unsigned indent = 0;
             while(indent < EditLines[y].size()
-               && (EditLines[y][indent] & 0xFF) == ' ') ++indent;
-            if((EditLines[y][indent] & 0xFF) == '\n') continue;
+               && ExtractCharCode(EditLines[y][indent]) == ' ') ++indent;
+            if(ExtractCharCode(EditLines[y][indent]) == '\n') continue;
             if(indent < outdent) continue;
             PerformEdit(0u,y, outdent, empty);
         }
@@ -1218,7 +1185,7 @@ static void BlockIndent(int offset)
     SyntaxCheckingNeeded = SyntaxChecking_DidEdits;
 }
 
-static void GetBlock(LongVecType& block)
+static void GetBlock(EditorCharVecType& block)
 {
     for(unsigned y=BlockBegin.y; y<=BlockEnd.y; ++y)
     {
@@ -1235,8 +1202,8 @@ static inline void FindPair()
 {
     int           PairDir  = 0;
     unsigned char PairChar = 0;
-    unsigned char PairColor = EditLines[Cur.y][Cur.x] >> 8;
-    switch(EditLines[Cur.y][Cur.x] & 0xFF)
+    unsigned char PairColor = EditLines[Cur.y][Cur.x] >> 8; // FIXME
+    switch(ExtractCharCode(EditLines[Cur.y][Cur.x]))
     {
         case '{': PairChar = '}'; PairDir = 1; break;
         case '[': PairChar = ']'; PairDir = 1; break;
@@ -1254,7 +1221,7 @@ static inline void FindPair()
             if(++testx >= EditLines[testy].size())
                 { testx=0; ++testy; if(testy >= EditLines.size()) return; }
             if((EditLines[testy][testx] >> 8) != PairColor) continue;
-            unsigned char c = EditLines[testy][testx] & 0xFF;
+            unsigned char c = ExtractCharCode(EditLines[testy][testx]);
             if(balance == 0 && c == PairChar) { Cur.x = testx; Cur.y = testy; return; }
             if(c == '{' || c == '[' || c == '(') ++balance;
             if(c == '}' || c == ']' || c == ')') --balance;
@@ -1267,7 +1234,7 @@ static inline void FindPair()
             else
                 --testx;
             if((EditLines[testy][testx] >> 8) != PairColor) continue;
-            unsigned char c = EditLines[testy][testx] & 0xFF;
+            unsigned char c = ExtractCharCode(EditLines[testy][testx]);
             if(balance == 0 && c == PairChar) { Cur.x = testx; Cur.y = testy; return; }
             if(c == '{' || c == '[' || c == '(') ++balance;
             if(c == '}' || c == ']' || c == ')') --balance;
@@ -1359,7 +1326,7 @@ static int SelectFont()
     {
         VisSoftCursor(-1);
         sprintf(StatusLine, "Please select new font size [Cancel]");
-        VisRenderTitleAndStatus();
+        VisRenderStatusLine();
         StatusLine[0] = 0;
 
         char marker_empty  = '.';
@@ -1386,8 +1353,7 @@ static int SelectFont()
                       o.cx[m++] = a+1;
                   }
                   if(c) ++q; else c = ' ';
-                  c |= 0x7000;
-                  if(FatMode) { p[2*a]=c; p[2*a+1]=c|0x80; } else { p[a] = c; p[a+(DOSBOX_HICOLOR_OFFSET/2)] = 0; } 
+                  VidmemPutEditorChar(MakeMenuColor(c), p);
         }   }   }}
 
 
@@ -1399,13 +1365,9 @@ static int SelectFont()
             }
         VisPutCursorAt(x-1,y);
         if(FatMode) xw *= 2;
-        unsigned short* p = GetVidMem(x,y);
+        {unsigned short* p = GetVidMem(x,y);
         for(unsigned m=0; m<xw; ++m)
-        {
-            unsigned short c = p[m];
-            p[m] = (c&0xFF) | ((c>>4)&0xF00) | ((c&0xF00)<<4);
-            p[m+(DOSBOX_HICOLOR_OFFSET/2)] = 0;
-        }
+            VidmemPutEditorChar(InvertColor(VidmemReadEditorChar(p)), p);}
     rewait:
         WaitInput(false);
         unsigned c = getch();
@@ -1583,7 +1545,7 @@ static void InvokeSave(int ask_name)
     {
         for(unsigned b=EditLines[a].size(), x=0; x<b; ++x)
         {
-            char c = EditLines[a][x] & 0xFF;
+            char c = ExtractCharCode(EditLines[a][x]);
             if(c == '\n') fputc('\r', fp);
             fputc(c, fp);
         }
@@ -1665,14 +1627,14 @@ static inline void k_home(void)
 {
     unsigned indent = 0;
     while(indent < EditLines[Cur.y].size()
-       && (EditLines[Cur.y][indent] & 0xFF) == ' ') ++indent;
+       && ExtractCharCode(EditLines[Cur.y][indent]) == ' ') ++indent;
     // indent = number of spaces in the beginning of the line
     Cur.x = (Cur.x == indent ? 0 : indent);
 }
 static void k_end(void)
 {
     Cur.x = EditLines[Cur.y].size();
-    if(Cur.x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n')
+    if(Cur.x > 0 && ExtractCharCode(EditLines[Cur.y].back()) == '\n')
         --Cur.x; /* past LF */
 }
 static void k_left(void)
@@ -1694,7 +1656,7 @@ static inline void k_ctrlleft(void)
     // Algorithm adapted from Joe 3.7
     #define at_line_end() (Cur.y >= EditLines.size() || Cur.x >= EditLines[Cur.y].size())
     #define at_begin() (Cur.x==0 && Cur.y==0)
-    #define cur_ch     (EditLines[Cur.y][Cur.x]&0xFF)
+    #define cur_ch     ExtractCharCode(EditLines[Cur.y][Cur.x])
 
     // First go one left.
     k_left();
@@ -1714,7 +1676,7 @@ static inline void k_ctrlright(void)
     // Algorithm adapted from Joe 3.7
     #define at_line_end() (Cur.y >= EditLines.size() || Cur.x >= EditLines[Cur.y].size())
     #define at_end()      (Cur.y >= EditLines.size() || ((Cur.y+1) == EditLines.size() && Cur.x == EditLines[Cur.y].size()))
-    #define cur_ch        (EditLines[Cur.y][Cur.x]&0xFF)
+    #define cur_ch        ExtractCharCode(EditLines[Cur.y][Cur.x])
     if(at_end()) return;
 
     // First skip possible space
@@ -1862,7 +1824,7 @@ int main(int argc, char**argv)
                         break;
                     case 'm': case 'M': case CTRL('M'): // move block
                     {
-                        LongVecType block, empty;
+                        EditorCharVecType block, empty;
                         GetBlock(block);
                         PerformEdit(BlockBegin.x,BlockBegin.y, block.size(), empty);
                         // Note: ^ Assumes Cur.x,Cur.y get updated here.
@@ -1874,7 +1836,7 @@ int main(int argc, char**argv)
                     }
                     case 'c': case 'C': case CTRL('C'): // paste block
                     {
-                        LongVecType block;
+                        EditorCharVecType block;
                         GetBlock(block);
                         unsigned x = Cur.x, y = Cur.y;
                         PerformEdit(Cur.x,Cur.y, InsertMode?0u:block.size(), block);
@@ -1884,7 +1846,7 @@ int main(int argc, char**argv)
                     }
                     case 'y': case 'Y': case CTRL('Y'): // delete block
                     {
-                        LongVecType block, empty;
+                        EditorCharVecType block, empty;
                         GetBlock(block);
                         PerformEdit(BlockBegin.x,BlockBegin.y, block.size(), empty);
                         BlockEnd.x = BlockBegin.x;
@@ -1924,7 +1886,7 @@ int main(int argc, char**argv)
                         break;
                     case ' ': // info about current character
                     {
-                        unsigned charcode = EditLines[Cur.y][Cur.x] & 0xFF;
+                        unsigned charcode = ExtractCharCode(EditLines[Cur.y][Cur.x]);
                         sprintf(StatusLine,
                             VidW >= 60
                             ? "Character '%c': hex=%02X, decimal=%d, octal=%03o"
@@ -2050,7 +2012,7 @@ int main(int argc, char**argv)
                     delkey:
                     {
                         unsigned eol_x = EditLines[Cur.y].size();
-                        if(eol_x > 0 && (EditLines[Cur.y].back() & 0xFF) == '\n') --eol_x;
+                        if(eol_x > 0 && ExtractCharCode(EditLines[Cur.y].back()) == '\n') --eol_x;
                         if(Cur.x > eol_x) { Cur.x = eol_x; break; } // just do end-key
                         PerformEdit(1u, 0u, nullptr);
                         WasAppend = true;
@@ -2159,7 +2121,7 @@ int main(int argc, char**argv)
             {
                 unsigned nspaces = 0;
                 while(nspaces < EditLines[Cur.y].size()
-                   && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
+                   && ExtractCharCode(EditLines[Cur.y][nspaces]) == ' ') ++nspaces;
                 if(nspaces > 0 && Cur.x == nspaces)
                 {
                     nspaces = 1 + (Cur.x-1) % TabSize;
@@ -2196,7 +2158,7 @@ int main(int argc, char**argv)
                 {
                     // Autoindent only in insert mode
                     while(nspaces < EditLines[Cur.y].size()
-                       && (EditLines[Cur.y][nspaces] & 0xFF) == ' ') ++nspaces;
+                       && ExtractCharCode(EditLines[Cur.y][nspaces]) == ' ') ++nspaces;
                     if(Cur.x < nspaces) nspaces = Cur.x;
                 }
                 PerformEdit(InsertMode?0u:1u, 1,'\n', nspaces,' ');

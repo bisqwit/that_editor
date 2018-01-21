@@ -2,7 +2,8 @@ CXX=i586-pc-msdosdjgpp-g++
 CXXFLAGS=-Ofast -g -flto
 CPPFLAGS=-std=gnu++17 -Wall -Wextra
 
-INCLUDES=jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh vec_sp.hh cpu.h kbhit.hh vecbase.hh
+INCLUDES=jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh vec_sp.hh \
+	 cpu.h kbhit.hh vecbase.hh chartype.hh
 
 OBJS=main.o mario.o vga.o kbhit.o
 

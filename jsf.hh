@@ -6,6 +6,8 @@
 # include <algorithm>
 #endif
 
+#include "vec_c.hh" // For the implementation of buffer
+
 class JSF
 {
 public:
@@ -78,7 +80,7 @@ public:
     struct Applier
     {
         virtual cdecl int Get(void) = 0;
-        virtual cdecl void Recolor(register unsigned distance, register unsigned n, register unsigned long attr) = 0;
+        virtual cdecl void Recolor(register unsigned distance, register unsigned n, register EditorCharType attr) = 0;
     };
     void Apply( ApplyState& state, Applier& app)
     {
@@ -144,9 +146,9 @@ private:
     struct option;
     struct state
     {
-        state*        next;
-        char*         name;
-        unsigned long attr;
+        state*         next;
+        char*          name;
+        EditorCharType attr;
         option* options[256];
     }* states;
     struct table_item
@@ -248,36 +250,28 @@ private:
              * it does not matter what it does to unknown words.
              */
             unsigned short c=0, i=0;
+//Good: 90 28   distance = 46  mod=46  div=26
             while(*line && *line != ' ' && *line != '\t') { c += 90u*(unsigned char)*line + i; i+=28; ++line; }
             unsigned char code = ((c + 22u) / 26u) % 46u;
+
+#ifdef ATTRIBUTE_CODES_IN_ANSI_ORDER
+            static const signed char actions[46] = { 10,29,2,4,31,22,27,23,11,36,15,28,7,6,25,-1,17,-1,24,12,16,30,-1,8,35,0,9,19,-1,3,14,20,21,33,32,34,1,13,-1,-1,5,26,-1,-1,18,37};
+#endif
+#ifdef ATTRIBUTE_CODES_IN_VGA_ORDER
             static const signed char actions[46] = { 10,30,2,1,31,19,29,23,13,36,15,25,7,3,28,-1,20,-1,24,9,16,27,-1,8,35,0,12,21,-1,5,11,17,22,33,32,34,4,14,-1,-1,6,26,-1,-1,18,37};
+#endif
             /*if(code >= 0 && code <= 45)*/ code = actions[code - 0]; // cekcpaka
             switch(code >> 4) { case 0: fg256 = code&15; break;
                                 case 1: bg256 = code&15; break;
-                                default:flags |= 1u << (code&7); }
+                                default:flags |= code&15; }
         }
-        if(flags & 0x10) { unsigned tmp=fg256; fg256=bg256; bg256=tmp; flags &= ~0x10; } // inverse
-
-        unsigned short attrlo = fg256;
-        unsigned char  attrhi = flags & 0xF;
-        if(fg256 < 16 && bg256 < 16)
-        {
-            // Create a 8-bit CGA/EGA/VGA attribute
-            attrlo |= (bg256 << 4) | ((flags & 0x20) << 2) | (flags & 0x08);
-        }
-        else
-        {
-            // Create an extended attribute
-            attrhi |= 0x80u | ((fg256 & 0x80) >> 1);
-            attrlo |= (bg256 << 8u) | 0x80u;
-        }
-        unsigned long attr = attrlo | (((unsigned long)attrhi) << 16u);
+        EditorCharType attr = ComposeEditorChar('\0', fg256, bg256, flags);
 
         *nameend = '\0';
         table_item tmp;
         tmp.token = strdup(namebegin);
         if(!tmp.token) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        tmp.state = (struct state *) attr;
+        tmp.state = (struct state *)(unsigned long)attr;
         colortable.push_back(tmp);
     }
     inline void ParseStateStart(char* line, const TabType& colortable)
@@ -304,11 +298,11 @@ private:
             if(!c)
             {
                 fprintf(stdout,"Unknown color: '%s'\n", line);
-                s->attr = 0x4A;
+                s->attr = MakeJSFerrorColor('\0');
             }
             else
             {
-                s->attr = (long) c;
+                s->attr = (EditorCharType)(unsigned long)c;
             }
         }
         s->next = states;
@@ -565,8 +559,8 @@ private:
                 Remap(o, state_cache, a, states->name);
                 while(o->noeat && o->recolor <= 1 && !o->buffer && !o->strings && !o->mark && !o->markend && !o->recolormark)
                 {
-                    unsigned long orig_attr = states->attr;
-                    unsigned long new_attr  = o->state->attr;
+                    EditorCharType orig_attr = states->attr;
+                    EditorCharType new_attr  = o->state->attr;
                     int had_recolor         = o->recolor > 0;
 
                     o = o->state->options[a];

@@ -21,6 +21,7 @@ o(q)
 # define vecBaseIncludes
 # include <stdlib.h>
 # include <malloc.h>
+# include <stdio.h>
 #endif
 
 #define q(T,VecType) class VecType

@@ -1,17 +1,26 @@
 <?php
 
-if(1){
-$slide_index = 1;
-$slide = Array(6/*3*/,7,7,7,7,6/*3*/,6/*3*/,2,22);
-}
+define('ALLOW_256COLOR', false);
 
 if(0){
+$slide_index = 1;
+$cyan = ALLOW_256COLOR ? 6 : 3;
+$green = 2;
+$dimgreen = ALLOW_256COLOR ? 22 : $green;
+$slide = Array($cyan,7,7,7,7,$cyan,$cyan,$green,$dimgreen);
+}
+
+if(1){
 $slide_index = 2;
-$slide = Array(248, /* somewhat white */
+$somewhite = ALLOW_256COLOR ? 248 : 7;
+$bryellow = ALLOW_256COLOR ? 11 : 14;
+$semidull = ALLOW_256COLOR ? 186 : 14;
+$dull  = ALLOW_256COLOR ? 136 : 6;
+$slide = Array($somewhite, /* somewhat white */
                15,  /* bright white */
-               11,  /* bright yellow */
-               186, /* semi dull yellow */
-               136, /* dull yellow */
+               $bryellow,  /* bright yellow */
+               $semidull, /* semi dull yellow */
+               $dull, /* dull yellow */
                8,   /* grey */
                0);
 }
@@ -38,11 +47,14 @@ for($n=0; $n<16; ++$n)
   if($n==8) { $r=$g=$b = 7; }
   Alloc($r,$g,$b);
 }
-$gramp = Array(1,2,3,5,6,7,8,9,11,12,13,14,16,17,18,19,20,22,23,24,25,27,28,29);
-$cramp = Array(0,12,16,21,26,31);
-for($r=0; $r<6; ++$r) for($g=0; $g<6; ++$g) for($b=0; $b<6; ++$b)
-  Alloc($cramp[$r],$cramp[$g],$cramp[$b]);
-for($n=0; $n<24; ++$n) Alloc($gramp[$n],$gramp[$n],$gramp[$n]);
+if(ALLOW_256COLOR)
+{
+  $gramp = Array(1,2,3,5,6,7,8,9,11,12,13,14,16,17,18,19,20,22,23,24,25,27,28,29);
+  $cramp = Array(0,12,16,21,26,31);
+  for($r=0; $r<6; ++$r) for($g=0; $g<6; ++$g) for($b=0; $b<6; ++$b)
+    Alloc($cramp[$r],$cramp[$g],$cramp[$b]);
+  for($n=0; $n<24; ++$n) Alloc($gramp[$n],$gramp[$n],$gramp[$n]);
+}
 
 $lors = Array();
 $poss = Array();

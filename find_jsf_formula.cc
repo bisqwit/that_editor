@@ -18,10 +18,17 @@ std::string sprintf(const char* fmt, unsigned value)
 int main()
 {
     static const char* const words[]{
-                   "black","blue","green","cyan","red","yellow","magenta","white",
-                   "BLACK","BLUE","GREEN","CYAN","RED","YELLOW","MAGENTA","WHITE",
-                   "bg_black","bg_blue","bg_green","bg_cyan","bg_red","bg_yellow","bg_magenta","bg_white",
-                   "BG_BLACK","BG_BLUE","BG_GREEN","BG_CYAN","BG_RED","BG_YELLOW","BG_MAGENTA","BG_WHITE",
+        /* VGA order of colors */
+        //           "black","blue","green","cyan","red","yellow","magenta","white",
+        //           "BLACK","BLUE","GREEN","CYAN","RED","YELLOW","MAGENTA","WHITE",
+        //           "bg_black","bg_blue","bg_green","bg_cyan","bg_red","bg_yellow","bg_magenta","bg_white",
+        //           "BG_BLACK","BG_BLUE","BG_GREEN","BG_CYAN","BG_RED","BG_YELLOW","BG_MAGENTA","BG_WHITE",
+        /* ANSI order of colors */
+                   "black","red","green","yellow","blue","magenta","cyan","white",
+                   "BLACK","RED","GREEN","YELLOW","BLUE","MAGENTA","CYAN","WHITE",
+                   "bg_black","bg_red","bg_green","bg_yellow","bg_blue","bg_magenta","bg_cyan","bg_white",
+                   "BG_BLACK","BG_RED","BG_GREEN","BG_YELLOW","BG_BLUE","BG_MAGENTA","BG_CYAN","BG_WHITE",
+        /* Attributes */
                    "underline","dim","italic","bold","inverse","blink"};
     std::map<std::string, std::string> actions;
     std::map<std::string, unsigned> action_values;
@@ -96,6 +103,7 @@ int main()
                   printf("            switch(code >> 4) { case 0: fg256 = code&15; break;\n"
                          "                                case 1: bg256 = code&15; break;\n"
                          "                                default:flags |= code&15; }\n");
+                  fflush(stdout);
               }
           }
       }

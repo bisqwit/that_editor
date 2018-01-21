@@ -1,5 +1,7 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include "langdefs.hh"
+#include "vga.hh"
+#include "chartype.hh"
 
 #ifdef __DJGPP__
 # include <dos.h>
@@ -11,8 +13,6 @@
 #endif
 
 //#include <string.h>
-
-#include "vga.hh"
 
 volatile unsigned long MarioTimer = 0;
 
@@ -184,7 +184,7 @@ static unsigned OverlayMarioByte(
 }
 
 void MarioTranslate(
-    unsigned long*  model,
+    EditorCharType* model,
     unsigned short* target,
     unsigned width)
 {
@@ -238,8 +238,8 @@ void MarioTranslate(
 
         int offset = basex - mariox;
 
-        unsigned long word = model[basex >> 3];
-        unsigned char ch = word;
+        EditorCharType word = model[basex >> 3];
+        unsigned char ch = ExtractCharCode(word);
 
         if(ch == 0xDC || (ch >= 0xB0 && ch <= 0xB2))
             ch = 0x20;
@@ -251,20 +251,12 @@ void MarioTranslate(
             RevisedFontData[fontdatasize++] =
                 OverlayMarioByte(marioframe,y,mariox, SourceFontPtr[y], offset);
         }
-        if(word & 0x80000000ul)
-            model[basex >> 3] = (word & 0xBFFF8000ul) | chartable[numchars++];
-        else
-            model[basex >> 3] = (word & 0x3FFF0000ul) | chartable[numchars++];
+        model[basex >> 3] = ChangeForegroundToDarkGray(Recolor(chartable[numchars++], word));
     }
 
     for(unsigned p=room_wide/8; p-- > 0u; )
-    {
-        unsigned long v = *model;
-        *target = v;
-        target[(DOSBOX_HICOLOR_OFFSET/2)] = v >> 16;
-        ++target;
-        ++model;
-    }
+        VidmemPutEditorChar(*model++, target);
+
     //memcpy(target, model, room_wide/4);
 #ifdef __BORLANDC__
     if(numchars > 0)

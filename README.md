@@ -116,7 +116,7 @@ and recolor some previous section using a select attribute.
 The source code file is continuously scanned from beginning to the end
 until everything has been scanned at least once since the last update.
 
-#### Element type (old)
+#### Element type (16-bit)
 
     1615  1211   8        0
      +-+---+-+---+--------+
@@ -128,7 +128,7 @@ until everything has been scanned at least once since the last update.
      fff = foreground color (0-7)
      ccc = character code (0-255)
 
-#### Element type (new)
+#### Element type (32-bit)
 
     With extended attribute (requires patched DOSBox):
     
