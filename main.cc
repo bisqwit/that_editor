@@ -578,124 +578,139 @@ static void VisRenderTitleAndStatus()
 {
     // Only re-render status once per frame
     static unsigned long LastMarioTimer = 0xFFFFFFFFul;
+    static unsigned long last_check_when = 0;
     if(MarioTimer == LastMarioTimer) return;
     LastMarioTimer = MarioTimer;
 
     unsigned StatusWidth = VidW*columns;
 
-    // LEFT-size parts
-    const char* Part1 = fnpart(CurrentFileName);
-    static char Part2[44]; sprintf(Part2, "Row %-5u/%u Col %u", // 4+11+1+11+5+11+nul
-        (unsigned) (Cur.y+1),
-        (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
-        (unsigned) (Cur.x+1));
-
-    // RIGHT-side parts
-    const char* Part3 = StatusGetClock();
-    static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
-    static const char Part5[] = "-4.2øC"; // temperature degC degrees celsius
-
-    const char* Part6 = StatusGetCPUspeed();
-
-    const unsigned NumParts = 6;
-    static const char* const Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
-    static const char Prio[6]  = {10,    13,  7,    4,    0,    2    };
-
-    unsigned Lengths[NumParts];
-    {for(unsigned n=0; n<NumParts; ++n) Lengths[n] = strlen(Parts[n]);}
-
-    // Create a plan which parts are rendered on the left side of the title bar,
-    // and which parts are rendered on the right side. Cache this plan.
-    // The plan is only updated whenever the screen width changes.
-    static unsigned left_parts  = 0, right_parts = 0, last_check_width = 0;
-    if(last_check_width != StatusWidth)
-    {
-        // When video width changes, determine which parts we can fit on the screen
-        unsigned columns_remaining = StatusWidth - 8;
-        last_check_width = StatusWidth;
-
-        // Check which combination of columns produces the best fit.
-        // Try all 2^6 = 64 combinations.
-        unsigned allowed_parts = 1, best_length = 0, best_prio = 0;
-        for(unsigned combination = 0; combination < (1 << NumParts); ++combination)
-        {
-            unsigned length = 0, prio = 0;
-            for(unsigned n=0; n<NumParts; ++n)
-                if(combination & (1 << n))
-                {
-                    if(length) ++length;
-                    length += Lengths[n];
-                    prio   += Prio[n];
-                }
-            if(length > columns_remaining) continue;
-            if((length+prio) > (best_length+best_prio))
-            {
-                best_length = length;
-                best_prio   = prio;
-                allowed_parts = combination;
-            }
-        }
-        // Only the first two parts go to the left, anything else goes on right
-        left_parts  = allowed_parts & 3;
-        right_parts = allowed_parts & ~3;
-    }
-
-    unsigned xbegin[NumParts], xend[NumParts];
-    memset(xbegin,0,sizeof(xbegin)); memset(xend,0,sizeof(xend));
-
-    unsigned leftn=6;  // Calculate starting positions for left-side parts
-    unsigned rightn=0; // Calculate relative starting positions for right-side parts
-    {for(unsigned n=0; n<NumParts; ++n)
-    {
-        unsigned bit = 1 << n;
-        if(left_parts & bit)  { if(leftn) { ++leftn; }   xbegin[n] = leftn;  xend[n] = (leftn  += Lengths[n]); }
-        if(right_parts & bit) { if(rightn) { ++rightn; } xbegin[n] = rightn; xend[n] = (rightn += Lengths[n]); }
-    }}
-    // Adjust the right-side starting positions
-    int      right_start = StatusWidth - 1 - rightn;
-    int      left_end    = leftn+1;
-    if(right_start < left_end) right_start = left_end;
-    {for(unsigned n=0; n<NumParts; ++n)
-        if(right_parts & (1u << n)) { xbegin[n] += right_start; xend[n] += right_start; }
-    }
-
-    // Now render the actual status line into Hdr[] with colors.
     static EditorCharVecType Hdr; Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
-
-    slide1.SetWidth(StatusWidth);
-    for(unsigned x=0; x<StatusWidth; ++x)
+    // We do the Mario update every frame, but this buffer is updated
+    // less frequently, only ~18 times a second, because it's rather heavy.
+    #ifdef __BORLANDC__
+    unsigned long now_when = (*(unsigned long*)MK_FP(0x40,0x6C));
+    #elif defined(__DJGPP__)
+    unsigned long now_when = _farpeekl(_dos_ds, 0x46C);
+    #else
+    unsigned long now_when = 0;
+    #endif
+    if(now_when != last_check_when)
     {
-        unsigned char ch, c1, c2; slide1.Get(x, ch,c1,c2);
+        last_check_when = now_when;
 
-        if(C64palette) { c1=7; c2=0; ch = 0x20; }
+        // LEFT-size parts
+        const char* Part1 = fnpart(CurrentFileName);
+        static char Part2[44]; sprintf(Part2, "Row %-5u/%u Col %u", // 4+11+1+11+5+11+nul
+            (unsigned) (Cur.y+1),
+            (unsigned) EditLines.size(), // (unsigned) EditLines.capacity(),
+            (unsigned) (Cur.x+1));
 
-        // Identify the character at this position
-        unsigned char c = 0x20;
-        if(x == 0 && WaitingCtrl)                            c = '^';
-        else if(x == 1 && WaitingCtrl)                       c = WaitingCtrl;
-        else if(x == 3 && InsertMode)                        c = 'I';
-        else if(x == 4 && UnsavedChanges)                    c = '*';
-        else for(unsigned n=0; n<NumParts; ++n)
-            if(x < xend[n] && x >= xbegin[n])
-            {
-                c = (unsigned char) Parts[n][x - xbegin[n]];
-                break;
-            }
+        // RIGHT-side parts
+        const char* Part3 = StatusGetClock();
+        static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
+        static const char Part5[] = "-4.2øC"; // temperature degC degrees celsius
 
-        // Convert the character into rendered symbol
-        if(c != 0x20)
+        const char* Part6 = StatusGetCPUspeed();
+
+        const unsigned NumParts = 6;
+        static const char* const Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
+        static const char Prio[6]  = {10,    13,  7,    4,    0,    2    };
+
+        unsigned Lengths[NumParts];
+        {for(unsigned n=0; n<NumParts; ++n) Lengths[n] = strlen(Parts[n]);}
+
+        // Create a plan which parts are rendered on the left side of the title bar,
+        // and which parts are rendered on the right side. Cache this plan.
+        // The plan is only updated whenever the screen width changes.
+        static unsigned left_parts  = 0, right_parts = 0, last_check_width = 0;
+        if(last_check_width != StatusWidth)
         {
-            ch = c; c2 = 0;
-            //if(c1 == c2) c2 = 7;
-        }
-        /*if(!C64palette && c != 0x20)
-            switch(c2)
-            {
-                case 8: c1 = 7; break;
-                case 0: c1 = 8; break;
-            }*/
+            // When video width changes, determine which parts we can fit on the screen
+            unsigned columns_remaining = StatusWidth - 8;
+            last_check_width = StatusWidth;
 
-        Hdr[x] = ComposeEditorChar(ch, c2, c1);
+            // Check which combination of columns produces the best fit.
+            // Try all 2^6 = 64 combinations.
+            unsigned allowed_parts = 1, best_length = 0, best_prio = 0;
+            for(unsigned combination = 0; combination < (1 << NumParts); ++combination)
+            {
+                unsigned length = 0, prio = 0;
+                for(unsigned n=0; n<NumParts; ++n)
+                    if(combination & (1 << n))
+                    {
+                        if(length) ++length;
+                        length += Lengths[n];
+                        prio   += Prio[n];
+                    }
+                if(length > columns_remaining) continue;
+                if((length+prio) > (best_length+best_prio))
+                {
+                    best_length = length;
+                    best_prio   = prio;
+                    allowed_parts = combination;
+                }
+            }
+            // Only the first two parts go to the left, anything else goes on right
+            left_parts  = allowed_parts & 3;
+            right_parts = allowed_parts & ~3;
+        }
+
+        unsigned xbegin[NumParts], xend[NumParts];
+        memset(xbegin,0,sizeof(xbegin)); memset(xend,0,sizeof(xend));
+
+        unsigned leftn=6;  // Calculate starting positions for left-side parts
+        unsigned rightn=0; // Calculate relative starting positions for right-side parts
+        {for(unsigned n=0; n<NumParts; ++n)
+        {
+            unsigned bit = 1 << n;
+            if(left_parts & bit)  { if(leftn) { ++leftn; }   xbegin[n] = leftn;  xend[n] = (leftn  += Lengths[n]); }
+            if(right_parts & bit) { if(rightn) { ++rightn; } xbegin[n] = rightn; xend[n] = (rightn += Lengths[n]); }
+        }}
+        // Adjust the right-side starting positions
+        int      right_start = StatusWidth - 1 - rightn;
+        int      left_end    = leftn+1;
+        if(right_start < left_end) right_start = left_end;
+        {for(unsigned n=0; n<NumParts; ++n)
+            if(right_parts & (1u << n)) { xbegin[n] += right_start; xend[n] += right_start; }
+        }
+
+        // Now render the actual status line into Hdr[] with colors.
+
+        slide1.SetWidth(StatusWidth);
+        for(unsigned x=0; x<StatusWidth; ++x)
+        {
+            unsigned char ch, c1, c2; slide1.Get(x, ch,c1,c2);
+
+            if(C64palette) { c1=7; c2=0; ch = 0x20; }
+
+            // Identify the character at this position
+            unsigned char c = 0x20;
+            if(x == 0 && WaitingCtrl)                            c = '^';
+            else if(x == 1 && WaitingCtrl)                       c = WaitingCtrl;
+            else if(x == 3 && InsertMode)                        c = 'I';
+            else if(x == 4 && UnsavedChanges)                    c = '*';
+            else for(unsigned n=0; n<NumParts; ++n)
+                if(x < xend[n] && x >= xbegin[n])
+                {
+                    c = (unsigned char) Parts[n][x - xbegin[n]];
+                    break;
+                }
+
+            // Convert the character into rendered symbol
+            if(c != 0x20)
+            {
+                ch = c; c2 = 0;
+                //if(c1 == c2) c2 = 7;
+            }
+            /*if(!C64palette && c != 0x20)
+                switch(c2)
+                {
+                    case 8: c1 = 7; break;
+                    case 0: c1 = 8; break;
+                }*/
+
+            Hdr[x] = ComposeEditorChar(ch, c2, c1);
+        }
     }
     // Then translate the Hdr[] buffer on screen using MarioTranslate.
     MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);

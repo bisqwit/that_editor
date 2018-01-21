@@ -265,13 +265,14 @@ private:
                                 case 1: bg256 = code&15; break;
                                 default:flags |= code&15; }
         }
-        EditorCharType attr = ComposeEditorChar('\0', fg256, bg256, flags);
+        unsigned long attr = ComposeEditorChar('\0', fg256, bg256, flags);
+        if(!attr) attr |= 0x80000000ul; // set 1 dummy bit in order to differentiate from nuls
 
         *nameend = '\0';
         table_item tmp;
         tmp.token = strdup(namebegin);
         if(!tmp.token) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        tmp.state = (struct state *)(unsigned long)attr;
+        tmp.state = (struct state *)attr;
         colortable.push_back(tmp);
     }
     inline void ParseStateStart(char* line, const TabType& colortable)

@@ -184,7 +184,7 @@ static unsigned OverlayMarioByte(
 }
 
 void MarioTranslate(
-    EditorCharType* model,
+    const EditorCharType* model,
     unsigned short* target,
     unsigned width)
 {
@@ -227,6 +227,8 @@ void MarioTranslate(
     unsigned numchars      = 0;
     unsigned spritewide = 16;
     if(VidCellHeight >= 29) spritewide = 34;
+
+    unsigned last_pos = 0;
     for(int basex = mariox - (mariox % 8)
       ; basex < int(mariox + spritewide)
      && basex < int(room_wide)
@@ -236,7 +238,8 @@ void MarioTranslate(
 
         int offset = basex - mariox;
 
-        EditorCharType word = model[basex >> 3];
+        unsigned pos = basex >> 3;
+        EditorCharType word = model[pos];
         unsigned char ch = ExtractCharCode(word);
 
         if(ch == 0xDC || (ch >= 0xB0 && ch <= 0xB2))
@@ -249,11 +252,12 @@ void MarioTranslate(
             RevisedFontData[fontdatasize++] =
                 OverlayMarioByte(marioframe,y,mariox, SourceFontPtr[y], offset);
         }
-        model[basex >> 3] = RecolorBgOnly(chartable[numchars++], word);
-    }
 
-    for(unsigned p=room_wide/8; p-- > 0u; )
-        VidmemPutEditorChar(*model++, target);
+        while(last_pos < pos) VidmemPutEditorChar(model[last_pos++], target);
+        VidmemPutEditorChar(RecolorBgOnly(chartable[numchars++], word), target);
+        ++last_pos;
+    }
+    {for(unsigned pos = room_wide/8; last_pos < pos; ) VidmemPutEditorChar(model[last_pos++], target);}
 
     //memcpy(target, model, room_wide/4);
 #ifdef __BORLANDC__
