@@ -8,7 +8,13 @@
 
 #include "vec_c.hh" // For the implementation of buffer
 
+#if defined(__cplusplus) && __cplusplus >= 199700L
+template<class DerivedClass>
+#endif
 class JSF
+#if defined(__cplusplus) && __cplusplus >= 199700L
+          : public DerivedClass
+#endif
 {
 public:
     JSF() : states(nullptr)
@@ -77,13 +83,20 @@ public:
         state.c = '?';
         state.s = states;
     }
+#if defined(__cplusplus) && __cplusplus >= 199700L
+    void Apply( ApplyState& state )
+#else
     struct Applier
     {
         virtual cdecl int Get(void) = 0;
         virtual cdecl void Recolor(register unsigned distance, register unsigned n, register EditorCharType attr) = 0;
     };
     void Apply( ApplyState& state, Applier& app)
+#endif
     {
+#if defined(__cplusplus) && __cplusplus >= 199700L
+        DerivedClass& app = *this;
+#endif
         for(;;)
         {
             /*fprintf(stdout, "[State %s]", state.s->name);*/
@@ -525,7 +538,11 @@ private:
                 fprintf(stdout, "Failed to find state called '%s' for index %u/256 in '%s'\n", name, a, statename);
             }
             o->name_mapped = 1;
-            for(TabType::iterator e = o->stringtable.end(),
+            for(
+#if defined(__cplusplus) && __cplusplus >= 199700L
+                typename
+#endif
+                TabType::iterator e = o->stringtable.end(),
                 t = o->stringtable.begin();
                 t != e;
                 ++t)

@@ -162,7 +162,10 @@ static void FileNew()
     CurrentFileName = 0;
     chars_file = 3; // Three newlines
 }
-struct ApplyEngine: public JSF::Applier
+struct ApplyEngine
+#if !(defined(__cplusplus) && __cplusplus >= 199700L)
+                   : public JSF::Applier
+#endif
 {
     bool finished;
     unsigned nlinestotal, nlines;
@@ -176,7 +179,10 @@ struct ApplyEngine: public JSF::Applier
           pending_recolor=0;
           pending_attr   =0;
         }
-    virtual cdecl int Get(void)
+#if !(defined(__cplusplus) && __cplusplus >= 199700L)
+    virtual cdecl 
+#endif
+    int Get(void)
     {
         if(y >= EditLines.size() || EditLines[y].empty())
         {
@@ -204,7 +210,10 @@ struct ApplyEngine: public JSF::Applier
      * n        = Number of last characters to apply that attribute for
      * distance = Extra number of characters to count and skip
      */
-    virtual cdecl void Recolor(register unsigned distance, register unsigned n, register EditorCharType attr)
+#if !(defined(__cplusplus) && __cplusplus >= 199700L)
+    virtual cdecl
+#endif
+    void Recolor(register unsigned distance, register unsigned n, register EditorCharType attr)
     {
         /* Flush the previous req, unless this new req is a super-set of the previous request */
         if(pending_recolor > 0)
@@ -777,9 +786,15 @@ enum SyntaxCheckingType
     SyntaxChecking_DoingFull = 3
 } SyntaxCheckingNeeded = SyntaxChecking_DoingFull;
 
+#if defined(__cplusplus) && __cplusplus >= 199700L
+JSF<ApplyEngine>             Syntax;
+ApplyEngine&                 SyntaxCheckingApplier = Syntax;
+JSF<ApplyEngine>::ApplyState SyntaxCheckingState;
+#else
 JSF             Syntax;
-JSF::ApplyState SyntaxCheckingState;
 ApplyEngine     SyntaxCheckingApplier;
+JSF::ApplyState SyntaxCheckingState;
+#endif
 
 /* TODO: In syntax checking: If the syntax checker ever reaches the current editing line,
  *                           make a save in the beginning of the line and use that for resuming
@@ -853,7 +868,11 @@ static void WaitInput(bool may_redraw = true)
                 }
                 // Apply syntax coloring. Will continue applying colors until
                 // either a key is pressed, or the checking finishes.
+            #if defined(__cplusplus) && __cplusplus >= 199700L
+                Syntax.Apply(SyntaxCheckingState);
+            #else
                 Syntax.Apply(SyntaxCheckingState, SyntaxCheckingApplier);
+            #endif
 
                 // Update the need-syntax-checking state
                 SyntaxCheckingNeeded =
