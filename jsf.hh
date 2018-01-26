@@ -69,17 +69,17 @@ public:
     {
         /* std::vector<unsigned char> */
         CharVecType buffer;
-        int buffering;
+        bool buffering;
         int recolor, markbegin, markend;
-        int recolormark:1, noeat:1;
+        bool recolormark, noeat;
         unsigned char c;
         state* s;
     };
     void ApplyInit(ApplyState& state)
     {
         state.buffer.clear();
-        state.buffering = state.recolor = state.noeat = 0;
-        state.markbegin = state.markend = 0;
+        state.buffering = state.noeat = false;
+        state.recolor = state.markbegin = state.markend = 0;
         state.c = '?';
         state.s = states;
     }
@@ -102,7 +102,7 @@ public:
             /*fprintf(stdout, "[State %s]", state.s->name);*/
             if(state.noeat)
             {
-                state.noeat = 0;
+                state.noeat = false;
                 if(!state.recolor) state.recolor = 1;
             }
             else
@@ -144,12 +144,12 @@ public:
                     state.recolor = state.buffer.size()+1;
                 }
                 state.buffer.clear();
-                state.buffering = 0;
+                state.buffering = false;
             }
             else if(state.buffering && !state.noeat)
                 state.buffer.push_back(state.c);
             if(o->buffer)
-                { state.buffering = 1;
+                { state.buffering = true;
                   state.buffer.assign(&state.c, &state.c + 1); }
             if(o->mark)    { state.markbegin = 0; }
             if(o->markend) { state.markend   = 0; }
@@ -163,6 +163,7 @@ private:
         char*          name;
         EditorCharType attr;
         option* options[256];
+        // Note: cleared using memset
     }* states;
     struct table_item
     {
@@ -209,16 +210,20 @@ private:
         union
         {
             struct state* state;
-            char*  state_name;
+            char*         state_name;
         };
         unsigned char recolor;
-        unsigned noeat:  1;
-        unsigned buffer: 1;
+        bool     noeat:  1;
+        bool     buffer: 1;
         unsigned strings:2; // 0=no strings, 1=strings, 2=istrings
-        unsigned name_mapped:1; // whether state(1) or state_name(0) is valid
-        unsigned mark:1, markend:1, recolormark:1;
+        bool     name_mapped:1; // whether state(1) or state_name(0) is valid
+        bool     mark:1, markend:1, recolormark:1;
+
+        option(): stringtable(),state(nullptr),recolor(0),noeat(0),buffer(0),strings(0),name_mapped(0),mark(0),markend(0),recolormark(0)
+        {
+        }
     };
-    inline unsigned long ParseColorDeclaration(char* line)
+    inline static unsigned long ParseColorDeclaration(char* line)
     {
         unsigned char fg256 = 0;
         unsigned char bg256 = 0;
@@ -227,30 +232,23 @@ private:
         {
             while(*line==' '||*line=='\t') ++line;
             if(!*line) break;
-            char* line_end = NULL;
-            int attr = (int)strtol(line, &line_end, 16); // from long to int, we only care about 8 bits really
+            {char* line_end = nullptr;
+            unsigned char val = strtol(line, &line_end, 16);
             if(line_end >= line+2) // Two-digit hex?
             {
                 line     = line_end;
-                fg256    = attr & 0x0F;
-                bg256    = (attr >> 4) & 0x0F;
+                fg256    = val & 0xF;
+                bg256    = val; bg256 >>= 4;
                 continue;
             }
             if(line[1] == 'g' && line[2] == '_' && line[3] >= '0' && line[3] <= '9')
             {
-                if(line[0] == 'f')
-                {
-                    if(line[5] >= '0' && line[5] <= '5') fg256 = 16 + strtol(line+3, &line, 6);
-                    else                                 fg256 = 232 + strtol(line+3, &line, 10);
-                    continue;
-                }
-                if(line[0] == 'b')
-                {
-                    if(line[5] >= '0' && line[5] <= '5') bg256 = 16 + strtol(line+3, &line, 6);
-                    else                                 bg256 = 232 + strtol(line+3, &line, 10);
-                    continue;
-                }
-            }
+                unsigned base = (line[5] >= '0' && line[5] <= '5') ? (16+(6<<8)) : (232+(10<<8));
+                unsigned char val = (unsigned char)(base) + strtol(line+3, &line_end, base>>8u);
+                switch(line[0]) { case 'b': bg256 = val; break;
+                                  case 'f': fg256 = val; break; }
+                line = line_end; continue;
+            }}
             /* Words: black blue cyan green red yellow magenta white
              *        BLACK BLUE CYAN GREEN RED YELLOW MAGENTA WHITE
              *        bg_black bg_blue bg_cyan bg_green bg_red bg_yellow bg_magenta bg_white
@@ -334,7 +332,6 @@ private:
     {
         option* o = new option;
         if(!o) fprintf(stdout, "failed to allocate new jsf option\n");
-        memset(o, 0, sizeof(*o));
         while(*line == ' ' || *line == '\t') ++line;
         if(*line == '*')
         {
@@ -382,7 +379,7 @@ private:
         *nameend = '\0';
         o->state_name  = strdup(namebegin);
         if(!o->state_name) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        o->name_mapped = 0;
+        o->name_mapped = false;
         /*fprintf(stdout, "'%s' for these: ", o->state_name);
         for(unsigned c=0; c<256; ++c)
             if(states->options[c] == o)
@@ -399,14 +396,14 @@ private:
             switch(*opt_begin)
             {
                 case 'n':
-                    if(strcmp(opt_begin+1, "oeat") == 0) { o->noeat = 1; break; }
+                    if(strcmp(opt_begin+1, "oeat") == 0) { o->noeat = true; break; }
                     goto ukw;
                 case 'b':
-                    if(strcmp(opt_begin+1, "uffer") == 0) { o->buffer = 1; break; }
+                    if(strcmp(opt_begin+1, "uffer") == 0) { o->buffer = true; break; }
                     goto ukw;
                 case 'm':
-                    if(strcmp(opt_begin+1, "arkend") == 0) { o->markend = 1; break; }
-                    if(strcmp(opt_begin+1, "ark")    == 0) { o->mark    = 1; break; }
+                    if(strcmp(opt_begin+1, "arkend") == 0) { o->markend = true; break; }
+                    if(strcmp(opt_begin+1, "ark")    == 0) { o->mark    = true; break; }
                     goto ukw;
                 case 's':
                     if(strcmp(opt_begin+1, "trings") == 0) { o->strings = 1; break; }
@@ -415,7 +412,7 @@ private:
                     if(strcmp(opt_begin+1, /*i*/"strings") == 0) { o->strings = 2; break; }
                     goto ukw;
                 case 'r':
-                    if(strcmp(opt_begin+1, "ecolormark") == 0) { o->recolormark = 1; break; }
+                    if(strcmp(opt_begin+1, "ecolormark") == 0) { o->recolormark = true; break; }
                     if(strncmp(opt_begin+1, "ecolor=", 7) == 0)
                     {
                         int r = atoi(opt_begin+8);
@@ -465,7 +462,7 @@ private:
         }
     }
     // Removes comments and trailing space from the buffer
-    void cleanup(char* Buf)
+    static void cleanup(char* Buf)
     {
         char quote=0, *begin = Buf, *end = strchr(Buf, '\0');
         for(; *begin; ++begin)
@@ -537,7 +534,7 @@ private:
             {
                 fprintf(stdout, "Failed to find state called '%s' for index %u/256 in '%s'\n", name, a, statename);
             }
-            o->name_mapped = 1;
+            o->name_mapped = true;
             for(
 #if defined(__cplusplus) && __cplusplus >= 199700L
                 typename
@@ -587,7 +584,7 @@ private:
                 {
                     EditorCharType orig_attr = states->attr;
                     EditorCharType new_attr  = o->state->attr;
-                    int had_recolor         = o->recolor > 0;
+                    int had_recolor          = o->recolor > 0;
 
                     o = o->state->options[a];
                     Remap(o, state_cache, a, o->state->name);
