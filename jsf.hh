@@ -233,14 +233,14 @@ private:
             while(*line==' '||*line=='\t') ++line;
             if(!*line) break;
             {char* line_end = nullptr;
-            unsigned char val = strtol(line, &line_end, 16);
+            {unsigned char val = strtol(line, &line_end, 16);
             if(line_end >= line+2) // Two-digit hex?
             {
                 line     = line_end;
                 fg256    = val & 0xF;
                 bg256    = val; bg256 >>= 4;
                 continue;
-            }
+            }}
             if(line[1] == 'g' && line[2] == '_' && line[3] >= '0' && line[3] <= '9')
             {
                 unsigned base = (line[5] >= '0' && line[5] <= '5') ? (16+(6<<8)) : (232+(10<<8));
@@ -309,7 +309,7 @@ private:
         if(!s->name)
         {
             fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-            s->attr = 0x4A;
+            s->attr = MakeJSFerrorColor('\0');
         }
         else
         {
@@ -393,36 +393,32 @@ private:
             char* opt_end   = line;
             while(*line == ' ' || *line == '\t') ++line;
             *opt_end = '\0';
-            switch(*opt_begin)
+
+            /* Words: noeat buffer markend mark strings istrings recolormark recolor=
+             * This hash has been generated using jsf-keyword-hash2.php.
+             */
+            register unsigned char n=2;
+            {for(register unsigned char v=0;;)
             {
-                case 'n':
-                    if(strcmp(opt_begin+1, "oeat") == 0) { o->noeat = true; break; }
-                    goto ukw;
-                case 'b':
-                    if(strcmp(opt_begin+1, "uffer") == 0) { o->buffer = true; break; }
-                    goto ukw;
-                case 'm':
-                    if(strcmp(opt_begin+1, "arkend") == 0) { o->markend = true; break; }
-                    if(strcmp(opt_begin+1, "ark")    == 0) { o->mark    = true; break; }
-                    goto ukw;
-                case 's':
-                    if(strcmp(opt_begin+1, "trings") == 0) { o->strings = 1; break; }
-                    goto ukw;
-                case 'i':
-                    if(strcmp(opt_begin+1, /*i*/"strings") == 0) { o->strings = 2; break; }
-                    goto ukw;
-                case 'r':
-                    if(strcmp(opt_begin+1, "ecolormark") == 0) { o->recolormark = true; break; }
-                    if(strncmp(opt_begin+1, "ecolor=", 7) == 0)
-                    {
-                        int r = atoi(opt_begin+8);
+                char c = *opt_begin++;
+                n += (c ^ v) + 6;
+                v += 2;
+                if(c == '=' || c == '\0') break;
+            }}
+            switch((n >> 3u) & 7)
+            {
+                case 0: o->recolormark = true; break; // recolormark
+                case 1: o->noeat       = true; break; // noeat
+                case 3: o->mark        = true; break; // mark
+                case 4: o->strings     = 1;    break; // strings
+                case 5: o->markend     = true; break; // markend
+                case 6: o->strings     = 2;    break; // istrings
+                case 7: o->buffer      = true; break; // buffer
+                //default:fprintf(stdout,"Unknown keyword '%s' in '%s'\n", opt_begin-1, namebegin); break;
+                case 2: int r = atoi(opt_begin);// recolor=
                         if(r < 0) r = -r;
                         o->recolor = r;
                         break;
-                    }
-                    goto ukw;
-                default: ukw:
-                    fprintf(stdout,"Unknown keyword '%s' in '%s'\n", opt_begin, namebegin);
             }
         }
         if(o->strings)
