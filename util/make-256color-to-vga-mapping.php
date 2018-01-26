@@ -6,9 +6,9 @@ function Alloc($r,$g,$b)
 {
   global $im;
   #print "$r $g $b\t\t";
-  $r = pow($r / 31, 2.0)*255;
-  $g = pow($g / 31, 2.0)*255;
-  $b = pow($b / 31, 2.0)*255;
+  $r = pow($r / 31, 1.6)*255;
+  $g = pow($g / 31, 1.6)*255;
+  $b = pow($b / 31, 1.6)*255;
   #print "$r $g $b\n";
   ImageColorAllocate($im, $r,$g,$b);
 }
@@ -34,9 +34,9 @@ for($n=0; $n<24; ++$n) $tab[] = Array($gramp[$n],$gramp[$n],$gramp[$n]);
 $result = Array();
 foreach($tab as $item)
 {
-  $index = ImageColorClosest($im, pow($item[0]/31,2.0)*255,
-                                  pow($item[1]/31,2.0)*255,
-                                  pow($item[2]/31,2.0)*255);
+  $index = ImageColorClosest($im, pow($item[0]/31,1.6)*255,
+                                  pow($item[1]/31,1.6)*255,
+                                  pow($item[2]/31,1.6)*255);
   $result[] = $index;
 }
 
