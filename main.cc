@@ -608,12 +608,12 @@ static void VisRenderTitleAndStatus()
         // RIGHT-side parts
         const char* Part3 = StatusGetClock();
         static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
-        static const char Part5[] = "-4.2øC"; // temperature degC degrees celsius
+        static const char Part5[] = "-13.1øC"; // temperature degC degrees celsius
 
         const char* Part6 = StatusGetCPUspeed();
 
         const unsigned NumParts = 6;
-        static const char* const Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
+        const char* const Parts[6] = {Part1,Part2,Part3,Part4,Part5,Part6};
         static const char Prio[6]  = {10,    13,  7,    4,    0,    2    };
 
         unsigned Lengths[NumParts];
