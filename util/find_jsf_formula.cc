@@ -30,6 +30,10 @@ int main()
                    "BG_BLACK","BG_RED","BG_GREEN","BG_YELLOW","BG_BLUE","BG_MAGENTA","BG_CYAN","BG_WHITE",
         /* Attributes */
                    "underline","dim","italic","bold","inverse","blink"};
+                   //01        02    04       08     10        20
+                   //
+                   // 40 = Foreground bit 7
+                   // 80 = ext-color flag
     std::map<std::string, std::string> actions;
     std::map<std::string, unsigned> action_values;
 
@@ -102,7 +106,7 @@ int main()
                   printf("            if(code >= %u && code <= %u) code = actions[code - %u];\n", min,max,min);
                   printf("            switch(code >> 4) { case 0: fg256 = code&15; break;\n"
                          "                                case 1: bg256 = code&15; break;\n"
-                         "                                default:flags |= code&15; }\n");
+                         "                                default:flags |= 1u << (code&15); }\n");
                   fflush(stdout);
               }
           }

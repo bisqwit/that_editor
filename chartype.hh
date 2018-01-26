@@ -132,7 +132,10 @@ static /*inline*/ EditorCharType InvertColor(EditorCharType ch)
 {
     if(sizeof(EditorCharType) > 2 && (ch & 0x80008000ul) == 0x80008000ul)
     {
-        return ComposeEditorChar(ch, (ch>>16), ((int(ch) >> 8) & 0x7F) | (int(ch >> 23) & 0x80), ch>>24);
+        return ComposeEditorChar(ch, (unsigned char)(ch >> 16u),
+                                     (unsigned char)( (unsigned(ch >> 8u)  & 0x7F)
+                                                    | (unsigned(ch >> 23u) & 0x80) ),
+                                     (ch >> 24u) & ~0x40);
     }
     else
     {

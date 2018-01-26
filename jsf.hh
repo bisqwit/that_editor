@@ -205,12 +205,8 @@ private:
         unsigned name_mapped:1; // whether state(1) or state_name(0) is valid
         unsigned mark:1, markend:1, recolormark:1;
     };
-    inline void ParseColorDeclaration(char* line, TabType& colortable)
+    inline unsigned long ParseColorDeclaration(char* line)
     {
-        while(*line==' '||*line=='\t') ++line;
-        char* namebegin = line;
-        while(*line && *line != ' ' && *line!='\t') ++line;
-        char* nameend = line;
         unsigned char fg256 = 0;
         unsigned char bg256 = 0;
         unsigned char flags = 0x00; // underline=1 dim=2 italic=4 bold=8 inverse=16 blink=32
@@ -219,7 +215,7 @@ private:
             while(*line==' '||*line=='\t') ++line;
             if(!*line) break;
             char* line_end = NULL;
-            int attr = strtol(line, &line_end, 16);
+            int attr = (int)strtol(line, &line_end, 16); // from long to int, we only care about 8 bits really
             if(line_end >= line+2) // Two-digit hex?
             {
                 line     = line_end;
@@ -227,17 +223,20 @@ private:
                 bg256    = (attr >> 4) & 0x0F;
                 continue;
             }
-            if(strncmp(line, "fg_", 3) == 0)
+            if(line[1] == 'g' && line[2] == '_' && line[3] >= '0' && line[3] <= '9')
             {
-                if(line[5] >= '0' && line[5] <= '5') fg256 = 16 + strtol(line+3, &line, 6);
-                else                                 fg256 = 232 + strtol(line+3, &line, 10);
-                continue;
-            }
-            if(strncmp(line, "bg_", 3) == 0)
-            {
-                if(line[5] >= '0' && line[5] <= '5') bg256 = 16 + strtol(line+3, &line, 6);
-                else                                 bg256 = 232 + strtol(line+3, &line, 10);
-                continue;
+                if(line[0] == 'f')
+                {
+                    if(line[5] >= '0' && line[5] <= '5') fg256 = 16 + strtol(line+3, &line, 6);
+                    else                                 fg256 = 232 + strtol(line+3, &line, 10);
+                    continue;
+                }
+                if(line[0] == 'b')
+                {
+                    if(line[5] >= '0' && line[5] <= '5') bg256 = 16 + strtol(line+3, &line, 6);
+                    else                                 bg256 = 232 + strtol(line+3, &line, 10);
+                    continue;
+                }
             }
             /* Words: black blue cyan green red yellow magenta white
              *        BLACK BLUE CYAN GREEN RED YELLOW MAGENTA WHITE
@@ -263,11 +262,20 @@ private:
             /*if(code >= 0 && code <= 45)*/ code = actions[code - 0]; // cekcpaka
             switch(code >> 4) { case 0: fg256 = code&15; break;
                                 case 1: bg256 = code&15; break;
-                                default:flags |= code&15; }
+                                default:flags |= 1u << (code&15); }
         }
+        // Type is unsigned long to avoid compiler warnings from pointer cast
         unsigned long attr = ComposeEditorChar('\0', fg256, bg256, flags);
         if(!attr) attr |= 0x80000000ul; // set 1 dummy bit in order to differentiate from nuls
-
+        return attr;
+    }
+    inline void ParseColorDeclaration(char* line, TabType& colortable)
+    {
+        while(*line==' '||*line=='\t') ++line;
+        char* namebegin = line;
+        while(*line && *line != ' ' && *line!='\t') ++line;
+        char* nameend = line;
+        unsigned long attr = ParseColorDeclaration(line);
         *nameend = '\0';
         table_item tmp;
         tmp.token = strdup(namebegin);
