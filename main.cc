@@ -617,7 +617,7 @@ static void VisRenderTitleAndStatus()
         // RIGHT-side parts
         const char* Part3 = StatusGetClock();
         static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
-        static const char Part5[] = "-13.1øC"; // temperature degC degrees celsius
+        static const char Part5[] = "-11.4øC"; // temperature degC degrees celsius
 
         const char* Part6 = StatusGetCPUspeed();
 
@@ -1236,7 +1236,7 @@ static inline void FindPair()
 {
     int           PairDir  = 0;
     unsigned char PairChar = 0;
-    unsigned char PairColor = EditLines[Cur.y][Cur.x] >> 8; // FIXME
+    EditorCharType PairColor = ExtractColor(EditLines[Cur.y][Cur.x]);
     switch(ExtractCharCode(EditLines[Cur.y][Cur.x]))
     {
         case '{': PairChar = '}'; PairDir = 1; break;
@@ -1254,7 +1254,7 @@ static inline void FindPair()
         {
             if(++testx >= EditLines[testy].size())
                 { testx=0; ++testy; if(testy >= EditLines.size()) return; }
-            if((EditLines[testy][testx] >> 8) != PairColor) continue;
+            if(ExtractColor(EditLines[testy][testx]) != PairColor) continue;
             unsigned char c = ExtractCharCode(EditLines[testy][testx]);
             if(balance == 0 && c == PairChar) { Cur.x = testx; Cur.y = testy; return; }
             if(c == '{' || c == '[' || c == '(') ++balance;
@@ -1267,7 +1267,7 @@ static inline void FindPair()
                 { if(testy == 0) return; testx = EditLines[--testy].size() - 1; }
             else
                 --testx;
-            if((EditLines[testy][testx] >> 8) != PairColor) continue;
+            if(ExtractColor(EditLines[testy][testx]) != PairColor) continue;
             unsigned char c = ExtractCharCode(EditLines[testy][testx]);
             if(balance == 0 && c == PairChar) { Cur.x = testx; Cur.y = testy; return; }
             if(c == '{' || c == '[' || c == '(') ++balance;
