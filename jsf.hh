@@ -22,7 +22,7 @@ public:
     }
     ~JSF()
     {
-        Clear();
+        //Clear();
     }
     void Parse(const char* fn)
     {
@@ -37,7 +37,7 @@ public:
         //fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
         TabType colortable;
         bool colors_sorted = false;
-        Clear();
+        //Clear();
         while(fgets(Buf, sizeof(Buf), fp))
         {
             cleanup(Buf);
