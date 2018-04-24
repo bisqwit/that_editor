@@ -262,7 +262,7 @@ And then run `fakeroot alien dj*.rpm`  and `dpkg -i dj*.deb`.
 Example (in a format tiny enough to fit in a 280 character tweet):
 
     sudo apt-get install fakeroot alien wget make
-    wget http://mirrors.fe.up.pt/pub/djgpp/rpms/djcr{oss-{binutils-2.29.1,gcc-7.2.0/x86_64/djcross-gcc-{,{c++,info,tools}-}7.2.0}-1ap,x-2.05-5}.x86_64.rpm
+    wget -c http://mirrors.fe.up.pt/pub/djgpp/rpms/djcr{oss-{binutils-2.29.1,gcc-7.3.0/djcross-gcc-{,{c++,info,tools}-}7.3.0}-1ap,x-2.05-5}.x86_64.rpm
     fakeroot alien dj*.rpm
     sudo dpkg -i dj*.deb
 
