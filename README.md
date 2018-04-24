@@ -266,7 +266,10 @@ Example (in a format tiny enough to fit in a 280 character tweet):
     fakeroot alien dj*.rpm
     sudo dpkg -i dj*.deb
 
-You can get HDPMI32 from https://sourceforge.net/projects/hx-dos/files/ ,
+DJGPP programs require a 32-bit DOS extender (DOS Protected Mode Interface, DPMI)
+in order to run.
+An example DPMI driver (HDPMI32) can be downloaded
+from https://sourceforge.net/projects/hx-dos/files/ ,
 such as: https://sourceforge.net/projects/hx-dos/files/2.17/hxrt217.7z/download
 
 ## Features
