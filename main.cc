@@ -617,7 +617,7 @@ static void VisRenderTitleAndStatus()
         // RIGHT-side parts
         const char* Part3 = StatusGetClock();
         static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
-        static const char Part5[] = "-11.4øC"; // temperature degC degrees celsius
+        static const char Part5[] = "+8.2øC"; // temperature degC degrees celsius
 
         const char* Part6 = StatusGetCPUspeed();
 
@@ -2198,6 +2198,8 @@ int main(int argc, char**argv)
                 PerformEdit(InsertMode?0u:1u, 1,'\n', nspaces,' ');
                 //Win.x = 0;
                 WasAppend = true;
+                if(Cur.y >= Win.y+DimY)
+                    Win.y = Cur.y > DimY/2 ? Cur.y - DimY/2 : 0;
                 break;
             }
             default:
