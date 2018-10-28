@@ -173,7 +173,7 @@ namespace
     void SDL_ReDraw()
     {
         const unsigned vratio = (cell_height_pixels/VidCellHeight);
-        //#pragma omp parallel for
+        #pragma omp parallel for
         for(unsigned py=0; py<pixels_height; ++py)
         {
             unsigned cy = py / cell_height_pixels;
