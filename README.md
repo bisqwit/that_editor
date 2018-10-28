@@ -274,12 +274,19 @@ such as: https://sourceforge.net/projects/hx-dos/files/2.17/hxrt217.7z/download
 
 ### Linux
 
-As of 2018-10-28, the editor can also be compiled on Linux.
+As of 2018-10-28, the editor can also be compiled on Linux. (64-bit is fine.)
 Go to the `32bit` subdirectory and run `make e`.
-You will need SDL2 development library installed.
+You will need SDL2 library installed with development headers.
 
 Note the usual disclaimers. This editor is not meant to be used by humans.
-Also, this version is hardcoded for Finnish keyboard layout. (Sorry!)
+
+Caveats:
+* This version is hardcoded for Finnish keyboard layout.
+* It also uses 8-bit CP437 font. There is no unicode support.
+* Rendering consumes a ton of CPU power right now. Some optimizations could be done mayhaps.
+* SDL2 is quite glitchy with how it reports keydown events for ctrl keys. Sometimes it reports a keydown for the plain key, immediately followed by a keydown for the key with ctrl modifier. Sometimes vice versa. This manifests as irritating glitches in this editor when you press ctrl-key combinations. I have tried my best to work around, but it is still glitchy. None of that happens in the DOS version.
+
+Sorry!
 
 ## Features
 
