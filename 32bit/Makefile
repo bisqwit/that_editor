@@ -9,7 +9,7 @@ OBJS=main.o mario.o vga.o kbhit.o
 
 #CXXFLAGS = -g -pg
 
-LXOBJS     := $(patsubst %.o,%.lx.o,$(OBJS))
+LXOBJS     := $(patsubst %.o,obj/%.lx.o,$(OBJS))
 LXCXX      := $(CXX)
 LXCXXFLAGS := $(CXXFLAGS)
 LXCPPFLAGS := $(CPPFLAGS)
@@ -17,7 +17,7 @@ LXCPPFLAGS += $(shell pkg-config sdl2 --cflags) -pthread -fopenmp
 LXLIBS     += $(shell pkg-config sdl2 --libs) -pthread -fopenmp
 #LXCXXFLAGS += -fsanitize=address
 
-DJOBJS     := $(patsubst %.o,%.dj.o,$(OBJS))
+DJOBJS     := $(patsubst %.o,obj/%.dj.o,$(OBJS))
 DJCXX      := i586-pc-msdosdjgpp-$(CXX)
 DJCXXFLAGS := $(CXXFLAGS)
 DJCPPFLAGS := $(CPPFLAGS)
@@ -31,14 +31,16 @@ e: $(LXOBJS)
 	$(LXCXX) -o $@ $^ $(LXCXXFLAGS) $(LXLIBS)
 
 define lxo
-$(P).dj.o: $(P).cc $(INCLUDES)
-	$(DJCXX) -c -o $(P).dj.o $(P).cc $(DJCXXFLAGS) $(DJCPPFLAGS)
-$(P).lx.o: $(P).cc $(INCLUDES)
-	$(LXCXX) -c -o $(P).lx.o $(P).cc $(LXCXXFLAGS) $(LXCPPFLAGS) -march=native
+obj/$(P).dj.o: $(P).cc $(INCLUDES)
+	$(DJCXX) -c -o obj/$(P).dj.o $(P).cc $(DJCXXFLAGS) $(DJCPPFLAGS)
+obj/$(P).lx.o: $(P).cc $(INCLUDES)
+	$(LXCXX) -c -o obj/$(P).lx.o $(P).cc $(LXCXXFLAGS) $(LXCPPFLAGS) -march=native
 
 endef
 $(eval $(foreach P,$(patsubst %.o,%,$(OBJS)),$(call lxo)))
 
+clean:
+	rm -f $(DJOBJS) $(LXOBJS) e e.exe
 
 # To install DJGPP on Debian:
 #    From http://ap1.pp.fi/djgpp/gcc/
