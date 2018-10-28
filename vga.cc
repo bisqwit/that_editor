@@ -13,7 +13,7 @@ unsigned short* VidMem = ((unsigned short *) MK_FP(0xB000, 0x8000));
 #else
 
 unsigned short VideoBuffer[DOSBOX_HICOLOR_OFFSET*-2]; // Two pages
-unsigned short VideoBuffer_Bak[DOSBOX_HICOLOR_OFFSET*-2];
+unsigned short VideoBuffer_Bak[sizeof(VideoBuffer)/2];
 unsigned char  FontBuffer[256 * 32];
 #include <SDL.h>
 #include <vector>
@@ -123,9 +123,9 @@ namespace
     SDL_Window*   window   = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture*  texture  = nullptr;
-    unsigned cells_horiz, cell_width_pixels,  pixels_width,  bufpixels_width;
-    unsigned cells_vert,  cell_height_pixels, pixels_height, bufpixels_height;
-    unsigned cursor_x=0, cursor_y=0, cursor_shape=0, cursor_old=0;
+    unsigned cells_horiz, cell_width_pixels,  pixels_width,  bufpixels_width, texturewidth;
+    unsigned cells_vert,  cell_height_pixels, pixels_height, bufpixels_height, textureheight;
+    unsigned cursor_x=0, cursor_y=0, cursor_shape=0, cursor_old=0, redoes=0;
     bool nine_pix = false, dbl_pix = false;
     std::vector<Uint16> pixbuf;
     void SDL_ReInitialize(unsigned cells_horizontal, unsigned cells_vertical,
@@ -149,10 +149,6 @@ namespace
             pixels_width,pixels_height,
             bufpixels_width,bufpixels_height);
 
-        if(texture)
-        {
-            SDL_DestroyTexture(texture);
-        }
         if(!window)
         {
             window = SDL_CreateWindow("editor",
@@ -169,18 +165,30 @@ namespace
             renderer = SDL_CreateRenderer(window, -1, 0);
         }
 
-        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
-            SDL_TEXTUREACCESS_STREAMING,
-            bufpixels_width,
-            bufpixels_height);
+        if(texture && (texturewidth<bufpixels_width || textureheight<bufpixels_height))
+        {
+            SDL_DestroyTexture(texture);
+            texture = nullptr;
+        }
+        if(!texture)
+        {
+            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
+                SDL_TEXTUREACCESS_STREAMING,
+                texturewidth  = bufpixels_width,
+                textureheight = bufpixels_height);
+        }
 
         pixbuf.resize(bufpixels_width*bufpixels_height);
+        cursor_old=~0u;
+        //fprintf(stderr, "resized\n");
+        redoes=3;
     }
     void SDL_ReDraw()
     {
         SDL_Rect rect;
         rect.x=0; rect.w=bufpixels_width;
         rect.y=0; rect.h=0;
+        unsigned errors = 0;
         auto RenderFlushLines = [&]()
         {
             if(rect.h)
@@ -188,17 +196,20 @@ namespace
                 SDL_Rect trect = rect;
                 if(dbl_pix) { trect.x *= 2; trect.w *= 2; }
                 if(cell_height_pixels != VidCellHeight) { trect.y *= 2; trect.h *= 2; }
-                SDL_UpdateTexture(texture, &rect,
-                                  pixbuf.data() + rect.y*bufpixels_width,
-                                  bufpixels_width*sizeof(pixbuf[0]));
-                SDL_RenderCopy(renderer, texture, &rect, &trect);
-                rect.y += rect.h; rect.h = 0;
+                if(SDL_UpdateTexture(texture, &rect,
+                                     pixbuf.data() + rect.y*bufpixels_width,
+                                     bufpixels_width*sizeof(pixbuf[0]))) ++errors;
+                if(SDL_RenderCopy(renderer, texture, &rect, &trect)) ++errors;
+                //fprintf(stderr, "updated %u-%u\n", rect.y, rect.y+rect.h);
+                rect.y += rect.h;
+                rect.h = 0;
             }
         };
         auto RenderAddLine = [&](unsigned line)
         {
-            if(line <= rect.y+rect.h+15) rect.h = line+1-rect.y;
-            else { RenderFlushLines(); rect.y=line; rect.h=1; }
+            if(line > rect.y+rect.h+15 || line < rect.y) RenderFlushLines();
+            if(!rect.h) { rect.y = line; rect.h = 1; }
+            else rect.h = line+1-rect.y;
         };
 
         unsigned cursor_now = (cursor_x+cursor_y*cells_horiz+(cursor_shape<<16)) << 1;
@@ -210,8 +221,8 @@ namespace
             bool same = false;
 
             unsigned short* vidmem_bak   = VideoBuffer_Bak + (vidmem - VideoBuffer);
-            int o = DOSBOX_HICOLOR_OFFSET/2;
-            if(cursor_now/2 == cursor_old/2
+            if(int o = DOSBOX_HICOLOR_OFFSET/2;
+               cursor_now/2 == cursor_old/2
             && memcmp(vidmem_bak,   vidmem,   cells_horiz*2) == 0
             && memcmp(vidmem_bak+o, vidmem+o, cells_horiz*2) == 0)
             {
@@ -219,8 +230,9 @@ namespace
             }
             else
             {
-                //memcpy(vidmem_bak,   vidmem,   cells_horiz*2);
-                //memcpy(vidmem_bak+o, vidmem+o, cells_horiz*2);
+                memcpy(vidmem_bak,   vidmem,   cells_horiz*2);
+                memcpy(vidmem_bak+o, vidmem+o, cells_horiz*2);
+                same = false;
             }
 
             for(unsigned line=0; line<VidCellHeight; ++line)
@@ -336,12 +348,10 @@ namespace
             }
         }
         RenderFlushLines();
-        if(rect.y)
-        {
-            SDL_RenderPresent(renderer);
-            memcpy(VideoBuffer_Bak, VideoBuffer, sizeof(VideoBuffer));
-        }
+        if(rect.y) { SDL_RenderPresent(renderer); }
         cursor_old = cursor_now;
+        if(errors) cursor_old = ~0ul;
+        if(redoes) { --redoes; cursor_old = ~0ul; }
     }
 }
 #endif

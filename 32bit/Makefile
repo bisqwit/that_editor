@@ -7,6 +7,9 @@ INCLUDES=jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh v
 
 OBJS=main.o mario.o vga.o kbhit.o
 
+# Enable this if you want DOS colors only (no underlines, italic etc.)
+#CPPFLAGS += -DUSE_DOSCOLORS
+
 #CXXFLAGS = -g -pg
 
 LXOBJS     := $(patsubst %.o,obj/%.lx.o,$(OBJS))

@@ -10,6 +10,12 @@
 # define ATTRIBUTE_CODES_IN_ANSI_ORDER
 #endif
 
+#ifdef USE_DOSCOLORS
+# define ATTRIBUTE_CODES_IN_VGA_ORDER
+# undef ATTRIBUTE_CODES_IN_ANSI_ORDER
+#endif
+
+
 #ifdef ATTRIBUTE_CODES_IN_ANSI_ORDER
   #include "vec_lp.hh"
   typedef LongPtrVecType  EditorLineVecType;
