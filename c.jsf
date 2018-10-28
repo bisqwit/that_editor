@@ -87,6 +87,8 @@
 =Preproc_stringContent	  fg_125 dim underline
 =Preproc_char		  fg_314 dim underline
 =Preproc_charContent	  fg_525 dim underline
+=Preproc_num              fg_322 dim underline
+=Preproc_numPrefix        fg_211 dim underline
 
 # Comments within preprocessor statements
 =PreprocComment	          fg_412 dim underline italic
@@ -110,7 +112,9 @@
 =OpenACC_space  underline fg_132
 
 # Comments
-=Comment	fg_411 italic
+=Comment	  fg_411 italic
+=Comment_Doxygen  fg_511 italic
+=Comment_Emphasis fg_401 italic
 
 # Most operators () ? ~ . / : * / + - < >
 =Special	fg_033
@@ -156,6 +160,8 @@
 # Char constants
 =Char		fg_021
 =CharContent	fg_044
+#=Char          fg_313
+#=CharContent   fg_525
 =WChar		fg_331
 =WCharContent	fg_552
 
@@ -179,8 +185,8 @@
 =Hardcoded	fg_000
 
 # All unrecognized content
-=Mystery	fg_500 bg_542
-#=Mystery	bg_000 fg_033
+#=Mystery	fg_500 bg_542
+=Mystery	bg_000 fg_033
 =TrailingSpace  bg_002
 
 ########################
@@ -230,10 +236,12 @@ done
 	"\t"		preproc_tab recolor=-1
 	" "		preproc_space
 	"\n"		newline
+	"0"		preproc_zero recolor=-1
+	"1-9"		preproc_decimal recolor=-1
 	"a-z$A-Z_"	preproc_ident recolor=-1 buffer
-	"()?~"		preproc_special		recolor=-1 noeat
-	"[]{},;"	preproc_special2	recolor=-1 noeat
-	"-:!<>=+*%&|^"  preproc_special         recolor=-1 noeat
+	"()?~"		preproc_special  recolor=-1
+	"[]{},;"	preproc_special2 recolor=-1
+	"-:!<>=+*%&|^"  preproc_special  recolor=-1
 	"/" 		pre2_slash   recolor=-1
 	"\""		pre2_string  recolor=-1
 	"'"		pre2_char    recolor=-1
@@ -244,9 +252,9 @@ done
 	*		preproc noeat
 	"\n"		trailing_space recolor=-2
 :preproc_special Preproc_sym
-	*		preproc
+	*		preproc noeat
 :preproc_special2 Preproc_sym2
-	*		preproc
+	*		preproc noeat
 :preproc_cont Preproc_sym
 	*		preproc_cont
 	"\n"		preproc_newline
@@ -259,78 +267,120 @@ done
 :preproc_newline_space Preproc
 	*		preproc_newline noeat
 	"\n"		trailing_space recolor=-2
+:preproc_zero Preproc
+	*		preproc_octal noeat
+	"b"		preproc_pfx_binary recolor=-2
+	"xX"		preproc_pfx_hex    recolor=-2
+:preproc_pfx_binary Preproc_numPrefix
+	*		preproc_binary noeat
+:preproc_pfx_hex Preproc_numPrefix
+	*		preproc_hex noeat
+:preproc_binary Preproc_num
+	*		preproc noeat
+	"uUlL"		preproc_numsuffix recolor=-1
+	"01"		preproc_binary
+:preproc_hex Preproc_num
+	*		preproc noeat
+	"uUlL"		preproc_numsuffix recolor=-1
+	"0-9A-Fa-f"	preproc_hex
+:preproc_octal Preproc_num
+	*		preproc noeat
+	"uUlLfF"	preproc_numsuffix recolor=-1
+	"0-7"		preproc_octal
+:preproc_decimal Preproc_num
+	*		preproc noeat
+	"uUlLfF"	preproc_numsuffix recolor=-1
+	"0-9.eE"	preproc_decimal
+:preproc_numsuffix Preproc_numPrefix
+	*		preproc noeat
+	"uUlLfF"	preproc_numsuffix
+
 :preproc_ident Preproc_ident
 	*		preproc noeat strings
+	"alignas"	preproc_ident_known
+	"alignof"	preproc_ident_known
+	"and_eq"	preproc_ident_known
+	"and"		preproc_ident_known
 	"auto"		preproc_ident_known
+	"bitand"	preproc_ident_known
+	"bitor"		preproc_ident_known
 	"bool"          preproc_ident_known
-	"char"		preproc_ident_known
+	"break"		preproc_ident_known
+	"case"		preproc_ident_known
+	"catch"		preproc_ident_known
 	"char16_t"	preproc_ident_known
 	"char32_t"	preproc_ident_known
-	"wchar_t"	preproc_ident_known
-	"const"		preproc_ident_known
+	"char"		preproc_ident_known
+	"class"         preproc_ident_known
+	"compl"		preproc_ident_known
+	"const_cast"	preproc_ident_known
 	"constexpr"	preproc_ident_known
-	"decltype"	preproc_ident_known
+	"const"		preproc_ident_known
+	"continue"	preproc_ident_known
+	"decltype"      preproc_ident_known
+	"default"	preproc_ident_known
+	"delete"        preproc_ident_known
+	"do"		preproc_ident_known
 	"double"	preproc_ident_known
+	"dynamic_cast"	preproc_ident_known
+	"else"		preproc_ident_known
 	"enum"		preproc_ident_known
+	"explicit"	preproc_ident_known
+	"export"	preproc_ident_known
 	"extern"	preproc_ident_known
+	"false"		preproc_ident_known
 	"float"		preproc_ident_known
+	"for"		preproc_ident_known
+	"friend"        preproc_ident_known
+	"goto"		preproc_ident_known
+	"if"		preproc_ident_known
 	"inline"	preproc_ident_known
 	"int"		preproc_ident_known
 	"long"		preproc_ident_known
-	"noexcept"	preproc_ident_known	#c++11
-	"thread_local"	preproc_ident_known	#c++11
+	"mutable"	preproc_ident_known
+	"namespace"     preproc_ident_known
+	"new"           preproc_ident_known
+	"noexcept"	preproc_ident_known
+	"not_eq"	preproc_ident_known
+	"not"		preproc_ident_known
 	"nullptr"	preproc_ident_known
+	"operator"	preproc_ident_known
+	"or_eq"		preproc_ident_known
+	"or"		preproc_ident_known
+	"private"	preproc_ident_known
+	"protected"	preproc_ident_known
+	"public"	preproc_ident_known
 	"register"	preproc_ident_known
+	"reinterpret_cast" preproc_ident_known
+	"return"	preproc_ident_known
 	"short"		preproc_ident_known
 	"signed"	preproc_ident_known
+	"sizeof"	preproc_ident_known
+	"static_assert"	preproc_ident_known
+	"static_cast"	preproc_ident_known
 	"static"	preproc_ident_known
 	"struct"	preproc_ident_known
+	"switch"	preproc_ident_known
+	"template"      preproc_ident_known
+	"this"		preproc_ident_known
+	"thread_local"	preproc_ident_known
+	"throw"		preproc_ident_known
+	"true"		preproc_ident_known
+	"try"		preproc_ident_known
 	"typedef"	preproc_ident_known
+	"typeid"	preproc_ident_known
+	"typename"      preproc_ident_known
 	"union"		preproc_ident_known
 	"unsigned"	preproc_ident_known
+	"using"         preproc_ident_known
+	"virtual"	preproc_ident_known
 	"void"		preproc_ident_known
 	"volatile"	preproc_ident_known
-	"break"		preproc_ident_known
-	"case"		preproc_ident_known
-	"continue"	preproc_ident_known
-	"default"	preproc_ident_known
-	"do"		preproc_ident_known
-	"else"		preproc_ident_known
-	"for"		preproc_ident_known
-	"goto"		preproc_ident_known
-	"if"		preproc_ident_known
-	"return"	preproc_ident_known
-	"sizeof"	preproc_ident_known
-	"switch"	preproc_ident_known
+	"wchar_t"       preproc_ident_known
+	"wchar_t"	preproc_ident_known
 	"while"		preproc_ident_known
-	"and"		preproc_ident_known   #c++
-	"and_eq"	preproc_ident_known   #c++
-	"bitand"	preproc_ident_known   #c++
-	"bitor"		preproc_ident_known   #c++
-	"catch"		preproc_ident_known   #c++
-	"compl"		preproc_ident_known   #c++
-	"delete"        preproc_ident_known   #c++
-	"explicit"	preproc_ident_known   #c++
-	"export"	preproc_ident_known   #c++
-	"false"		preproc_ident_known   #c++
-	"friend"        preproc_ident_known   #c++
-	"namespace"     preproc_ident_known   #c++
-	"new"           preproc_ident_known   #c++
-	"not"		preproc_ident_known   #c++
-	"not_eq"	preproc_ident_known   #c++
-	"operator"	preproc_ident_known   #c++
-	"or"		preproc_ident_known   #c++
-	"or_eq"		preproc_ident_known   #c++
-	"private"	preproc_ident_known   #c++
-	"protected"	preproc_ident_known   #c++
-	"public"	preproc_ident_known   #c++
-	"throw"		preproc_ident_known   #c++
-	"true"		preproc_ident_known   #c++
-	"try"		preproc_ident_known   #c++
-	"using"         preproc_ident_known   #c++
-	"virtual"	preproc_ident_known   #c++
-	"xor"		preproc_ident_known   #c++
-	"xor_eq"	preproc_ident_known   #c++
+	"xor_eq"	preproc_ident_known
+	"xor"		preproc_ident_known
 done
 	"a-z$A-Z0-9_"	preproc_ident
 :preproc_ident_known Preproc_cKW
@@ -662,8 +712,9 @@ done
 
 # All following states are for when we're not in a preprocessor line
 
+#:idle Special
 :idle Mystery
-	*		idle
+	*		mystery		recolor=-1
 	"()?~"		special		recolor=-1
 	"]{,;"		special2	recolor=-1
 	":"		maybe_glue	recolor=-1
@@ -688,6 +739,8 @@ done
 	"R"		maybe_rawstring	recolor=-1 buffer
 	"\\"		re2c_escape     recolor=-1
 	"\n"		newline
+:mystery Mystery
+	*		idle noeat
 
 :re2c_escape Re2cEscape
 	*		re2c_escape1
@@ -782,10 +835,16 @@ done
 done
 	"a-z_$A-Z0-9_"	perc_ident
 :bison_kw	BisonKw
-	*	idle noeat	
-	" \n\t"	bison_kw
+	*	idle noeat
+	" \t"   bison_kw
+	"\n"    bison_kw_newline
 	"a-z"	perc_ident recolor=-1 buffer
 	"{"	bison_delim recolor=-1
+:bison_kw_newline BisonKw
+	*	bison_kw noeat
+	"\t"	bison_kw_newline_tab recolor=-1
+:bison_kw_newline_tab Tab
+	*	bison_kw_newline noeat
 :bison_ident	BisonDollar
 	*	idle noeat
 	"$0-9"	bison_ident
@@ -795,6 +854,7 @@ done
 :maybe_bison_comment	Special
 	*	idle	noeat
 	"/"	maybe2_bison_comment recolor=-2
+	"*"	comment              recolor=-2
 :maybe2_bison_comment	Comment
 	*	line_comment		noeat
 	"%"	is_bison_comment	recolormark noeat
@@ -832,6 +892,8 @@ done
 :comment Comment
 	*		comment
 	" "		comment_space
+	"@\\"		comment_maybe_doxygencmd
+	"`"		comment_emphasis
 	"\t"		comment_tab recolor=-1
 	"*"		maybe_end_comment
 :comment_tab Tab
@@ -852,6 +914,31 @@ done
 	"\n"		newline
 :line_comment_escape Comment
 	*		line_comment
+:comment_maybe_doxygencmd Comment
+	*		comment noeat
+	"a-z"		comment_doxygencmd recolor=-2 buffer
+	" "		comment_space
+	"\t"		comment_tab recolor=-1
+	"*"		maybe_end_comment
+:comment_doxygencmd Comment
+	*		comment noeat strings
+	"fn"		comment_doxygencmd_real
+	"brief"		comment_doxygencmd_real
+	"param"		comment_doxygencmd_real
+	"tparam"	comment_doxygencmd_real
+	"returns"	comment_doxygencmd_real
+	"see"		comment_doxygencmd_real
+	"remark"	comment_doxygencmd_real
+	"parblock"	comment_doxygencmd_real
+	"endparblock"	comment_doxygencmd_real
+done
+	"a-z$"		comment_doxygencmd
+
+:comment_doxygencmd_real Comment_Doxygen
+	*		comment noeat
+:comment_emphasis	Comment_Emphasis
+	*		comment_emphasis
+	" \t\n\r*`"	comment recolor=-1
 
 # Numeric constants
 :first_digit_0 Numeric
@@ -1087,7 +1174,7 @@ done
 	"NUMCONST"	bisonident
 	"STRINGCONST"	bisonident
 	"error"		bisonident2
-	"program"	bisonident
+	"library"	bisonident
 	"functions"	bisonident
 	"paramdecl"	bisonident
 	"paramdecls"	bisonident
@@ -1097,8 +1184,8 @@ done
 	"cl_brace1"	bisonident
 	"cl_bracket1"	bisonident
 	"cl_parens1"	bisonident
-	"statement1"	bisonident
-	"statement"	bisonident
+	"stmt1"	bisonident
+	"stmt"	bisonident
 	"exprs1"	bisonident
 	"expr1"		bisonident
 	"p_expr1"	bisonident
@@ -1172,6 +1259,7 @@ done
 	"explicit"	kw   #c++
 	"export"	kw   #c++
 	"false"		kw   #c++
+	"final"         kw   #c++
 	"friend"        kw   #c++
 	"namespace"     kw   #c++
 	"new"           kw   #c++
@@ -1180,6 +1268,7 @@ done
 	"operator"	kw   #c++
 	"or"		kw   #c++
 	"or_eq"		kw   #c++
+	"override"      kw   #c++
 	"private"	kw   #c++
 	"protected"	kw   #c++
 	"public"	kw   #c++

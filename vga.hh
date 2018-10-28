@@ -1,20 +1,24 @@
 /* Ad-hoc programming editor for DOSBox -- (C) 2011-03-08 Joel Yliluoma */
 #include "langdefs.hh"
 
+
 #ifdef __BORLANDC__
 
 extern unsigned short* VidMem;
+#define DOSBOX_HICOLOR_OFFSET (-0x8000l)
 
 #elif defined(__DJGPP__)
 
 #include <sys/nearptr.h>
 #define VidMem (reinterpret_cast<unsigned short*>(__djgpp_conventional_base + 0xB8000))
+#define DOSBOX_HICOLOR_OFFSET (-0x8000l)
 
 #else
-static unsigned short VidMem[256*256];
-#endif
+#define DOSBOX_HICOLOR_OFFSET (-0x10000l)
 
-#define DOSBOX_HICOLOR_OFFSET (-0x8000l)
+extern unsigned short VideoBuffer[];
+#define VidMem (VideoBuffer - DOSBOX_HICOLOR_OFFSET/2)
+#endif
 
 extern unsigned char VidW, VidH, VidCellHeight;
 extern double VidFPS;
@@ -28,6 +32,7 @@ void VgaDisableFontAccess();
 void VgaSetFont(unsigned char height, unsigned number, unsigned first, const unsigned char* source);
 void VgaGetMode();
 void VgaSetMode(unsigned modeno);
+void VgaPutCursorAt(unsigned cx, unsigned cy, unsigned shape);
 
 void VgaSetCustomMode(
     unsigned width,

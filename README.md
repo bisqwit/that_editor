@@ -272,6 +272,13 @@ An example DPMI driver (HDPMI32) can be downloaded
 from https://sourceforge.net/projects/hx-dos/files/ ,
 such as: https://sourceforge.net/projects/hx-dos/files/2.17/hxrt217.7z/download
 
+### Linux
+
+As of 2018-10-28, the editor can also be compiled on Linux.
+Go to the `32bit` subdirectory and run `make e`.
+
+Note the usual disclaimers. This editor is not meant to be used by humans.
+
 ## Features
 
 Paper-thin set pieces.

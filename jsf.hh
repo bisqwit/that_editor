@@ -2,11 +2,23 @@
 #include "langdefs.hh"
 #include <string.h>
 
-#if defined(__cplusplus) && __cplusplus >= 199700L
-# include <algorithm>
+#ifndef __BORLANDC__
+# include <strings.h>
+#else
+# define strcasecmp stricmp
+# define strncasecmp strnicmp
+#endif
+
+#ifndef __BORLANDC__
+# //define JSF_FORGO_SAVINGS
+# include <string>
 #endif
 
 #include "vec_c.hh" // For the implementation of buffer
+#include "vec_l.hh"
+
+const char* sort_info;
+char        sort_igncase;
 
 #if defined(__cplusplus) && __cplusplus >= 199700L
 template<class DerivedClass>
@@ -17,12 +29,13 @@ class JSF
 #endif
 {
 public:
-    JSF() : states(nullptr)
+    JSF()
     {
+        Clear();
     }
     ~JSF()
     {
-        //Clear();
+        Clear();
     }
     void Parse(const char* fn)
     {
@@ -31,49 +44,295 @@ public:
         Parse(fp);
         fclose(fp);
     }
+private:
+    // Removes comments and trailing space from the buffer
+    static void cleanup(char* Buf)
+    {
+        char quote=0, *begin = Buf, *end = strchr(Buf, '\0');
+        for(; *begin; ++begin)
+        {
+            if(*begin == '#' && !quote)
+                { end=begin; *begin='\0'; break; }
+            if(*begin == '"') quote=!quote;
+            else if(*begin == '\\') ++begin;
+        }
+        while(end > Buf &&
+            (end[-1] == '\r'
+          || end[-1] == '\n'
+          || end[-1] == ' '
+          || end[-1] == '\t')) --end;
+        *end = '\0';
+    }
+private:
+    static int ItemCompare(const void* a, const void* b)
+    {
+        const unsigned long* ap = (const unsigned long*) a;
+        const unsigned long* bp = (const unsigned long*) b;
+        return sort_igncase ? strcasecmp(sort_info+ap[0], sort_info+bp[0])
+                            : strcmp(sort_info+ap[0], sort_info+bp[0]);
+    }
+    static unsigned long AddString(CharVecType& vec, const char* namebegin, const char* nameend)
+    {
+      #if defined(__GNU_SOURCE)// && !defined(__DJGPP__)
+        void* ptr = memmem(&vec[0], vec.size(), namebegin, nameend-namebegin+1);
+        if(ptr) { return (const char*)ptr - (const char*)&vec[0]; }
+      #endif
+        // Adds a '\0' terminated string (*nameend must be '\0')
+        unsigned long result = vec.size();
+        vec.insert(vec.end(), (const unsigned char*)namebegin, (const unsigned char*)(nameend+1));
+        return result;
+    }
+    static const unsigned long& BinarySearch(
+        const LongVecType& data, const CharVecType& names,
+        unsigned begin, unsigned end,
+        const char* key, unsigned key_length,
+        int (*comparator)(const char*,const char*, size_t))
+    {
+        static unsigned long invalid = (unsigned long)(~0ul);
+        while(begin<end)
+        {
+            unsigned half = (end-begin) >> 1;
+            const char* ptr = (const char*) &names[ data[(begin+half)*2] ];
+            int c = comparator(ptr, key, key_length);
+            if(!c)
+            {
+                c = ptr[key_length];
+                if(c == '\0')
+                {
+                    //fprintf(stderr, "Comparing(%s) and (%.*s) = %d\n", ptr,key_length,key, c);
+                    return data[(begin+half)*2+1];
+                }
+            }
+            //fprintf(stderr, "Comparing(%s) and (%.*s) = %d\n", ptr,key_length,key, c);
+            if(c < 0) begin += half+1;
+            else      end   = begin+half;
+        }
+        return invalid;
+    }
+
+    static const unsigned long& BinarySearch(const LongVecType& data, const CharVecType& names, const char* key)
+    {
+        return BinarySearch(data, names, 0, data.size()/2, key, strlen(key), strncmp);
+    }
+    struct option;
+    struct state;
+
+    typedef unsigned short OptIndexType;
+    typedef unsigned short StateIndexType;
+    typedef unsigned short StrTableIndexType;
+    typedef unsigned short StrTableLengthType;
+public:
+
+    CharVecType all_strings;
+    LongVecType string_tables;
+    CharVecType all_options; // raw storage for struct option[]
+    LongVecType all_states;  // namepointer->statepointer
+    const state* first_state;
+
     void Parse(FILE* fp)
     {
-        char Buf[512]={0};
-        //fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
-        TabType colortable;
+        Clear();
+
+        fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
+
+        CharVecType colornames;
+        LongVecType colordata;
         bool colors_sorted = false;
-        //Clear();
+        unsigned options_merged = 0, state_bytes = 0;
+
+        struct state* current_state          = nullptr;
+
+        char Buf[512] = {0};
         while(fgets(Buf, sizeof(Buf), fp))
         {
+            //fprintf(stderr, "Processing line: %s", Buf);
             cleanup(Buf);
-            if(Buf[0] == '=')
+            char* line = Buf+1;
+            switch(Buf[0])
             {
-                colors_sorted = false;
-                ParseColorDeclaration(Buf+1, colortable);
-            }
-            else if(Buf[0] == ':')
-            {
-                if(!colors_sorted)
+                case '=':
                 {
-                    /* Sort the color table when the first state is encountered */
-                    sort(colortable);
-                    colors_sorted = true;
+                    // Parse color declaration
+                    while(*line==' '||*line=='\t') ++line;
+                    char* namebegin = line;
+                    while(*line && *line != ' ' && *line!='\t') ++line;
+                    char* nameend = line;
+                    while(*line==' '||*line=='\t') ++line;
+                    *nameend = '\0';
+                    unsigned long data[2] = {AddString(colornames, namebegin, nameend), ParseColorDeclaration(line)};
+                    colordata.insert(colordata.end(), data, data+2);
+                    colors_sorted = false;
+                    break;
                 }
-                ParseStateStart(Buf+1, colortable);
+                case ':':
+                {
+                    if(!colors_sorted)
+                    {
+                        /* Sort the color table when the first state is encountered */
+                        sort_info    = (const char*) &colornames[0];
+                        sort_igncase = 0;
+                        qsort(&colordata[0], colordata.size()/2, sizeof(colordata[0])*2, ItemCompare);
+                        colors_sorted = true;
+                        //for(unsigned a=0; a<colordata.size(); a+=2)
+                        //    fprintf(stderr, "Color '%s': 0x%lX\n", &colornames[colordata[a]], colordata[a+1]);
+                    }
+                    // Parse state declaration
+                    char* line = Buf+1;
+                    while(*line==' '||*line=='\t') ++line;
+                    char* namebegin = line;
+                    while(*line && *line != ' ' && *line!='\t') ++line;
+                    char* nameend = line;
+                    while(*line==' '||*line=='\t') ++line;
+                    *nameend = '\0';
+                    unsigned long name_ptr = AddString(colornames, namebegin, nameend);
+
+                    struct state* s = new state;
+                    memset(s->options, 255, sizeof(s->options));
+
+                    // Identify the color. Use binary search
+                    const char* colorname = line;
+                    unsigned long attr = BinarySearch(colordata, colornames, colorname);
+                    s->attr = attr;
+                    if(attr == (unsigned long)(~0ul))
+                    {
+                        s->attr = MakeJSFerrorColor('\0');
+                        fprintf(stderr, "Unknown color: '%s'\n", colorname);
+                    }
+                #ifdef JSF_FORGO_SAVINGS
+                    s->name      = namebegin;
+                    s->colorname = colorname;
+                #endif
+                    current_state          = s;
+                #ifndef __BORLANDC__
+                    static_assert(sizeof(unsigned long) >= sizeof(s), "unsigned long is too small for pointers");
+                #endif
+                    unsigned long data[2] = {name_ptr, (unsigned long)s};
+                    all_states.insert(all_states.end(), data, data+2);
+                    state_bytes += sizeof(*s);
+                    break;
+                }
+                case ' ': case '\t':
+                {
+                    unsigned char bitmask[256/8] = {0};
+                    memset(bitmask, 0, sizeof(bitmask));
+                    struct option o = ParseStateLine(Buf, fp, bitmask, colornames);
+
+                    unsigned long option_addr = 0;
+                    // Reuse duplicate slot from all_options[] if possible
+                  #ifndef __DJGPPq__
+                    for(; option_addr < all_options.size(); option_addr += sizeof(o))
+                        if(memcmp(&all_options[option_addr], &o, sizeof(o)) == 0)
+                            break;
+                  #else
+                    option_addr = all_options.size();
+                  #endif
+
+                    if(option_addr == all_options.size())
+                        all_options.insert(all_options.end(), (const unsigned char*)&o, (const unsigned char*)&o + sizeof(o));
+                    else
+                        options_merged += 1;
+
+                    option_addr /= sizeof(o);
+
+                    if( option_addr > OptIndexType(~0ul))
+                    {
+                        fprintf(stderr, "Too many distinct options in JSF rules\n");
+                    }
+
+                    for(unsigned n=0; n<256; ++n)
+                        if(bitmask[n/8] & (1u << (n%8u)))
+                        {
+                        #ifdef JSF_FORGO_SAVINGS
+                            fprintf(stderr, "State[%s]Char %02X will point to option %lu (state %s)\n",
+                                current_state->name.c_str(),
+                                n,
+                                option_addr,
+                                &colornames[o.state_ptr]);
+                        #endif
+                            current_state->options[n] = option_addr;
+                        }
+
+                    break;
+                }
             }
-            else if(Buf[0] == ' ' || Buf[0] == '\t')
-                ParseStateLine(Buf, fp);
         }
-        //fprintf(stdout, "Binding... "); fflush(stdout);
-        BindStates();
-        //fprintf(stdout, "Done\n"); fflush(stdout);
-        for(unsigned n=0; n<colortable.size(); ++n) free(colortable[n].token);
+        fprintf(stdout, "Binding... "); fflush(stdout);
+
+        // This is BindStates().
+        // Sort the state names for quick lookup
+        first_state = (const state*) all_states[1]; // Read the first state pointer before the array is sorted.
+        sort_info    = (const char*) &colornames[0];
+        sort_igncase = 0;
+        qsort(&all_states[0], all_states.size()/2, sizeof(all_states[0])*2, ItemCompare);
+
+      #ifdef JSF_FORGO_SAVINGS
+        for(unsigned ptr=0; ptr<all_states.size(); ptr+=2)
+            fprintf(stderr, "State %u: Name pointer = '%s', state name = '%s'\n",
+                ptr/2,
+                &colornames[all_states[ptr+0]],
+                ((state*)all_states[ptr+1])->name.c_str());
+      #endif
+
+        // Process all options, and change their state_ptr into an actual pointer.
+        {for(unsigned ptr=0; ptr<all_options.size(); ptr+=sizeof(struct option))
+        {
+            struct option& o = *(struct option*)&all_options[ptr];
+            const char* name = (const char*) &colornames[o.state_ptr];
+            const unsigned long& v = BinarySearch(all_states, colornames, name);
+            if(v == (unsigned long)(~0ul)) fprintf(stderr, "Unknown state name: %s\n", name);
+            else
+            {
+                unsigned stateindex = (&v - &all_states[0]) / 2;
+            #ifdef JSF_FORGO_SAVINGS
+                fprintf(stderr, "Option %zu: State %s will be state 0x%lu(%s), i.e. index %u\n",
+                    ptr/sizeof(struct option), name,
+                    v,
+                    ((struct state*)v)->name.c_str(),
+                    stateindex);
+            #endif
+
+                if(stateindex > StateIndexType(~0ul)) fprintf(stderr, "StateIndexType is too small.\n");
+                o.state_ptr = stateindex;
+            }
+        }}
+        // The process all string tables, and change their state_ptr into an actual pointer.
+        {for(unsigned ptr=0; ptr<string_tables.size(); ptr+=2)
+        {
+            const char* name = (const char*) &colornames[ string_tables[ptr+1] ];
+            string_tables[ptr+1] = BinarySearch(all_states, colornames, name);
+            if(string_tables[ptr+1] == (unsigned long)(~0ul)) fprintf(stderr, "Unknown state name: %s\n", name);
+        }}
+        // Then reduce the states array into just the pointers
+        {for(unsigned ptr=0; ptr<all_states.size(); ptr+=2)
+        {
+            const char* name = (const char*) &colornames[ all_states[ptr+0] ];
+            const struct state* s = (const struct state*)all_states[ptr+1];
+            for(unsigned n=0; n<256; ++n)
+                if(s->options[n] == OptIndexType(~0ul))
+                    fprintf(stderr, "State %s: Character %u still undefined!\n", name, n);
+
+            all_states[ptr/2] = all_states[ptr+1];
+        }}
+        all_states.resize(all_states.size()/2);
+
+        fprintf(stdout, "Done; strings=%zu, strtab=%zu, opt=%zu, states=%zu; %u merged opts; %u state bytes\n",
+            all_strings.size(),
+            string_tables.size(),
+            all_options.size()/sizeof(option),
+            all_states.size()/sizeof(void*),
+            options_merged, state_bytes);
+        fflush(stdout);
+        // colornames & colordata will be freed automatically due to scope.
     }
-    struct state;
     struct ApplyState
     {
         /* std::vector<unsigned char> */
         CharVecType buffer;
-        bool buffering;
-        int recolor, markbegin, markend;
-        bool recolormark, noeat;
+        bool        buffering;
+        int         recolor, markbegin, markend;
+        bool        recolormark, noeat;
         unsigned char c;
-        state* s;
+        const state*  s;
     };
     void ApplyInit(ApplyState& state)
     {
@@ -81,7 +340,7 @@ public:
         state.buffering = state.noeat = false;
         state.recolor = state.markbegin = state.markend = 0;
         state.c = '?';
-        state.s = states;
+        state.s = first_state;
     }
 #if defined(__cplusplus) && __cplusplus >= 199700L
     void Apply( ApplyState& state )
@@ -99,7 +358,9 @@ public:
 #endif
         for(;;)
         {
-            /*fprintf(stdout, "[State %s]", state.s->name);*/
+        #ifdef JSF_FORGO_SAVINGS
+            fprintf(stdout, "[State %s]", state.s->name.c_str());
+        #endif
             if(state.noeat)
             {
                 state.noeat = false;
@@ -124,105 +385,58 @@ public:
                 app.Recolor(state.markend+1, state.markbegin - state.markend, state.s->attr);
             }
 
-            option *o = state.s->options[state.c];
-            state.recolor     = o->recolor;
-            state.recolormark = o->recolormark;
-            state.noeat       = o->noeat;
-            state.s           = o->state;
-            if(o->strings)
+            unsigned long opt_ptr = sizeof(option) * state.s->options[state.c];
+            const struct option& o = *(const struct option*) &all_options[opt_ptr];
+            state.recolor     = o.recolor;
+            state.recolormark = o.recolormark;
+            state.noeat       = o.noeat;
+            state.s           = (const struct state*) all_states[o.state_ptr];
+            if(o.strings)
             {
                 const char* k = (const char*) &state.buffer[0];
                 unsigned    n = state.buffer.size();
-                struct state* ns = o->strings==1
-                        ? findstate(o->stringtable, k, n)
-                        : findstate_i(o->stringtable, k, n);
-                /*fprintf(stdout, "Tried '%.*s' for %p (%s)\n",
-                    n,k, ns, ns->name);*/
-                if(ns)
+                unsigned long ns = BinarySearch(
+                    string_tables, all_strings,
+                    o.string_table_begin, o.string_table_begin + o.string_table_length,
+                    k,n,
+                    o.strings==1 ? strncmp : strncasecmp);
+        #ifdef JSF_FORGO_SAVINGS
+                fprintf(stdout, "String table: Tried '%.*s', got 0x%lX (%s)", n,k, ns,
+                    ns != (unsigned long)(~0ul) ? ((const struct state*)ns)->name.c_str() : "(null)"
+                );
+        #endif
+                if(ns != (unsigned long)(~0ul))
                 {
-                    state.s = ns;
+                    state.s       = (const struct state*) ns;
                     state.recolor = state.buffer.size()+1;
                 }
                 state.buffer.clear();
                 state.buffering = false;
             }
             else if(state.buffering && !state.noeat)
+            {
+        #ifdef JSF_FORGO_SAVINGS
+                fprintf(stdout, "Buffering char %02X\n", state.c);
+        #endif
                 state.buffer.push_back(state.c);
-            if(o->buffer)
+            }
+            else
+            {
+        #ifdef JSF_FORGO_SAVINGS
+                fprintf(stdout, "Based on char %02X (%c), choosing option %lu -- state %s (recolor=%d, mark=%d, noeat=%d)\n",
+                    state.c, state.c, opt_ptr,
+                    state.s->name.c_str(),
+                    state.recolor, state.recolormark, state.noeat);
+        #endif
+            }
+            if(o.buffer)
                 { state.buffering = true;
                   state.buffer.assign(&state.c, &state.c + 1); }
-            if(o->mark)    { state.markbegin = 0; }
-            if(o->markend) { state.markend   = 0; }
+            if(o.mark)    { state.markbegin = 0; }
+            if(o.markend) { state.markend   = 0; }
         }
     }
 private:
-    struct option;
-    struct state
-    {
-        state*         next;
-        char*          name;
-        EditorCharType attr;
-        option* options[256];
-        // Note: cleared using memset
-    }* states;
-    struct table_item
-    {
-        char*  token;
-        union
-        {
-            struct state* state;
-            char*  state_name;
-        };
-
-#if defined(__cplusplus) && __cplusplus >= 199700L
-        inline table_item()                    { token=nullptr; state=nullptr; }
-        inline table_item(const table_item& b) { token=b.token; state=b.state; }
-        inline ~table_item()                   { }
-        inline table_item& operator=(const table_item& b) { token=b.token; state=b.state; return *this; }
-#else
-        inline void Construct() { token=nullptr; state=nullptr; }
-        inline void Construct(const table_item& b) { token=b.token; state=b.state; }
-        inline void Destruct()  { }
-#endif
-#if defined(__cplusplus) && __cplusplus >= 201100L
-        inline void Construct(table_item&& b)        { token=b.token; state=b.state; b.token = nullptr; b.state = nullptr; }
-        inline table_item(table_item&& b)            { Construct(std::move(b)); }
-        inline table_item& operator=(table_item&& b) { Construct(std::move(b)); return *this; }
-#else
-        inline void swap(table_item& b)
-        {
-            register char* t;
-            t = token;      token     =b.token;      b.token     =t;
-            t = state_name; state_name=b.state_name; b.state_name=t;
-        }
-#endif
-    };
-    /* std::vector<table_item> without STL, for Borland C++ */
-    #define UsePlacementNew
-    #define o(x) x(table_item,TabType)
-    #include "vecbase.hh"
-    #undef o
-    #undef UsePlacementNew
-
-    struct option
-    {
-        TabType stringtable;
-        union
-        {
-            struct state* state;
-            char*         state_name;
-        };
-        unsigned char recolor;
-        bool     noeat:  1;
-        bool     buffer: 1;
-        unsigned strings:2; // 0=no strings, 1=strings, 2=istrings
-        bool     name_mapped:1; // whether state(1) or state_name(0) is valid
-        bool     mark:1, markend:1, recolormark:1;
-
-        option(): stringtable(),state(nullptr),recolor(0),noeat(0),buffer(0),strings(0),name_mapped(0),mark(0),markend(0),recolormark(0)
-        {
-        }
-    };
     inline static unsigned long ParseColorDeclaration(char* line)
     {
         unsigned char fg256 = 0;
@@ -280,63 +494,46 @@ private:
         if(!attr) attr |= 0x80000000ul; // set 1 dummy bit in order to differentiate from nuls
         return attr;
     }
-    inline void ParseColorDeclaration(char* line, TabType& colortable)
+
+    struct option;
+    struct state
     {
-        while(*line==' '||*line=='\t') ++line;
-        char* namebegin = line;
-        while(*line && *line != ' ' && *line!='\t') ++line;
-        char* nameend = line;
-        unsigned long attr = ParseColorDeclaration(line);
-        *nameend = '\0';
-        table_item tmp;
-        tmp.token = strdup(namebegin);
-        if(!tmp.token) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        tmp.state = (struct state *)attr;
-        colortable.push_back(tmp);
-    }
-    inline void ParseStateStart(char* line, const TabType& colortable)
+        // Each of the possible 256 followups is an option.
+        OptIndexType   options[256]; // Index to all_options[].
+        EditorCharType attr;
+
+    #ifdef JSF_FORGO_SAVINGS
+        std::string name, colorname;
+    #endif
+
+        state(): options(),attr() {}
+    };
+    // An option is a line in JSF file under ':', for example "idle noeat" is an option.
+    struct option
     {
-        while(*line==' '||*line=='\t') ++line;
-        char* namebegin = line;
-        while(*line && *line != ' ' && *line!='\t') ++line;
-        char* nameend = line;
-        while(*line==' '||*line=='\t') ++line;
-        *nameend = '\0';
-        struct state* s = new state;
-        if(!s) fprintf(stdout, "failed to allocate new jsf state\n");
-        memset(s, 0, sizeof(*s));
-        s->name = strdup(namebegin);
-        if(!s->name)
-        {
-            fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-            s->attr = MakeJSFerrorColor('\0');
-        }
-        else
-        {
-            state* c = findstate(colortable, line);
-            // The value in the table is a pointer type, but it actually is a color code (integer).
-            if(!c)
-            {
-                fprintf(stdout,"Unknown color: '%s'\n", line);
-                s->attr = MakeJSFerrorColor('\0');
-            }
-            else
-            {
-                s->attr = (EditorCharType)(unsigned long)c;
-            }
-        }
-        s->next = states;
-        states = s;
-    }
-    inline void ParseStateLine(char* line, FILE* fp)
+        // Index into string_tables[]
+        StrTableIndexType  string_table_begin;
+        // Before BindStates(), state_ptr is an index to colornames[].
+        // After BindStates(),  state_ptr is an index to all_states[].
+        StateIndexType     state_ptr;
+        StrTableLengthType string_table_length;
+        //
+        unsigned char recolor;
+        bool          noeat:  1;
+        bool          buffer: 1;
+        unsigned char strings:2; // 0=no strings, 1=strings, 2=istrings
+        bool          mark:1, markend:1, recolormark:1;
+    };
+    struct option ParseStateLine(char* line, FILE* fp, unsigned char bitmask[256/8],
+                                 CharVecType& colornames)
     {
-        option* o = new option;
-        if(!o) fprintf(stdout, "failed to allocate new jsf option\n");
+        struct option o = {};
+        memset(&o, 0, sizeof(o));
+
         while(*line == ' ' || *line == '\t') ++line;
         if(*line == '*')
         {
-            for(unsigned a=0; a<256; ++a)
-                states->options[a] = o;
+            memset(bitmask, 0xFF, 256/8); // All characters refer to this option
             ++line;
         }
         else if(*line == '"')
@@ -363,11 +560,11 @@ private:
                             case 'v': *line = '\v'; break;
                             case 'b': *line = '\b'; break;
                         }
-                    do states->options[first] = o;
+                    do bitmask[first/8] |= 1u << (first%8u);
                     while(first++ != (unsigned char)*line);
                 }
                 else
-                    states->options[first] = o;
+                    bitmask[first/8] |= 1u << (first%8u);
             }
             if(*line == '"') ++line;
         }
@@ -377,14 +574,10 @@ private:
         char* nameend   = line;
         while(*line == ' ' || *line == '\t') ++line;
         *nameend = '\0';
-        o->state_name  = strdup(namebegin);
-        if(!o->state_name) fprintf(stdout, "strdup: failed to allocate string for %s\n", namebegin);
-        o->name_mapped = false;
-        /*fprintf(stdout, "'%s' for these: ", o->state_name);
-        for(unsigned c=0; c<256; ++c)
-            if(states->options[c] == o)
-                fprintf(stdout, "%c", c);
-        fprintf(stdout, "\n");*/
+        unsigned state_ptr = AddString(colornames, namebegin, nameend);
+        if(state_ptr > StateIndexType(~0ul))
+            fprintf(stderr, "StateIndexType is too small.\n");
+        o.state_ptr = state_ptr;
 
         while(*line != '\0')
         {
@@ -407,22 +600,25 @@ private:
             }}
             switch((n >> 3u) & 7)
             {
-                case 0: o->recolormark = true; break; // recolormark
-                case 1: o->noeat       = true; break; // noeat
-                case 3: o->mark        = true; break; // mark
-                case 4: o->strings     = 1;    break; // strings
-                case 5: o->markend     = true; break; // markend
-                case 6: o->strings     = 2;    break; // istrings
-                case 7: o->buffer      = true; break; // buffer
+                case 0: o.recolormark = true; break; // recolormark
+                case 1: o.noeat       = true; break; // noeat
+                case 3: o.mark        = true; break; // mark
+                case 4: o.strings     = 1;    break; // strings
+                case 5: o.markend     = true; break; // markend
+                case 6: o.strings     = 2;    break; // istrings
+                case 7: o.buffer      = true; break; // buffer
                 //default:fprintf(stdout,"Unknown keyword '%s' in '%s'\n", opt_begin-1, namebegin); break;
                 case 2: int r = atoi(opt_begin);// recolor=
                         if(r < 0) r = -r;
-                        o->recolor = r;
+                        o.recolor = r;
                         break;
             }
         }
-        if(o->strings)
+        if(o.strings)
         {
+            if(string_tables.size()/2 > StrTableIndexType(~0ul))
+                fprintf(stderr, "StrTableIndexType is too small.\n");
+            o.string_table_begin = string_tables.size()/2;
             for(;;)
             {
                 char Buf[512]={0};
@@ -433,230 +629,81 @@ private:
                 if(strcmp(line, "done") == 0) break;
                 if(*line == '"') ++line;
 
-                char* key_begin = line = strdup(line);
-                if(!key_begin) fprintf(stdout, "strdup: failed to allocate string for %s\n", line);
+                char* key_begin = line;
                 while(*line != '"' && *line != '\0') ++line;
                 char* key_end   = line;
                 if(*line == '"') ++line;
                 while(*line == ' ' || *line == '\t') ++line;
-                *key_end++   = '\0';
+                *key_end     = '\0';
 
                 char* value_begin = line;
                 while(*line != '\0') ++line;
-                /*unsigned char* value_end   = (unsigned char*) line;
-                *value_end++ = '\0';*/
+                char* value_end   = line;
                 if(*key_begin && *value_begin)
                 {
-                    table_item item;
-                    item.token      = key_begin;
-                    item.state_name = value_begin;
-                    //fprintf(stdout, "String-table push '%s' '%s'\n", key_begin,value_begin);
-                    o->stringtable.push_back(item);
+                    unsigned long string_address = AddString(all_strings, key_begin,  key_end);
+                    unsigned long value_address  = AddString(colornames, value_begin, value_end);
+                    unsigned long data[2] = {string_address, value_address};
+                    string_tables.insert(string_tables.end(), data, data+2);
                 }
             }
-            sort(o->stringtable);
+            unsigned length = (string_tables.size()/2 - o.string_table_begin);
+            if(length > StrTableLengthType(~0ul))
+                fprintf(stderr, "StrTableLengthType is too small.\n");
+
+            o.string_table_length = length;
+            sort_info    = (const char*) &all_strings[0];
+            sort_igncase = o.strings == 2;
+            qsort(&string_tables[o.string_table_begin*2], o.string_table_length,
+                  sizeof(&string_tables[0])*2, ItemCompare);
+            /*
+            for(unsigned n=0; n<length; ++n)
+                fprintf(stderr, "%s: %s\n", &all_strings[string_tables[(o.string_table_begin+n)*2+0]],
+                                            &colornames[string_tables[(o.string_table_begin+n)*2+1]]);*/
         }
-    }
-    // Removes comments and trailing space from the buffer
-    static void cleanup(char* Buf)
-    {
-        char quote=0, *begin = Buf, *end = strchr(Buf, '\0');
-        for(; *begin; ++begin)
-        {
-            if(*begin == '#' && !quote)
-                { end=begin; *begin='\0'; break; }
-            if(*begin == '"') quote=!quote;
-            else if(*begin == '\\') ++begin;
-        }
-        while(end > Buf &&
-            (end[-1] == '\r'
-          || end[-1] == '\n'
-          || end[-1] == ' '
-          || end[-1] == '\t')) --end;
-        *end = '\0';
-    }
-    // Search given table for the given string.
-    // Is used by BindStates() for finding states for binding,
-    // but also used by Apply for searching a string table
-    // (i.e. used when coloring reserved words).
-    static state* findstate(const TabType& table, const char* s, register unsigned n=0)
-    {
-        if(!n) n = strlen(s);
-        unsigned begin = 0, end = table.size();
-        while(begin < end)
-        {
-            unsigned half = (end-begin) >> 1;
-            const table_item& m = table[begin + half];
-            register int c = strncmp(m.token, s, n);
-            if(c == 0)
-            {
-                if(m.token[n] == '\0') return m.state;
-                c = m.token[n];
-            }
-            if(c < 0) begin += half+1;
-            else      end = begin+half;
-        }
-        return 0;
-    }
-    // Case-ignorant version
-    static state* findstate_i(const TabType& table, const char* s, register unsigned n=0)
-    {
-        if(!n) n = strlen(s);
-        unsigned begin = 0, end = table.size();
-        while(begin < end)
-        {
-            unsigned half = (end-begin) >> 1;
-            const table_item& m = table[begin + half];
-            register int c = strnicmp(m.token, s, n);
-            if(c == 0)
-            {
-                if(m.token[n] == '\0') return m.state;
-                c = m.token[n];
-            }
-            if(c < 0) begin += half+1;
-            else      end = begin+half;
-        }
-        return 0;
+        return o;
     }
 
-    // Converted state-names into pointers to state structures for fast access
-    void Remap(option*& o, TabType& state_cache, unsigned a, const char* statename)
-    {
-        if( ! o->name_mapped)
-        {
-            char* name = o->state_name;
-            o->state = findstate( state_cache, name );
-            if(!o->state)
-            {
-                fprintf(stdout, "Failed to find state called '%s' for index %u/256 in '%s'\n", name, a, statename);
-            }
-            o->name_mapped = true;
-            for(
-#if defined(__cplusplus) && __cplusplus >= 199700L
-                typename
-#endif
-                TabType::iterator e = o->stringtable.end(),
-                t = o->stringtable.begin();
-                t != e;
-                ++t)
-            {
-                char* name2 = t->state_name;
-                t->state = findstate( state_cache, name2 );
-                if(!t->state)
-                {
-                    fprintf(stdout, "Failed to find state called '%s' for string table in target '%s' for '%s'\n", name2, name, statename);
-                }
-                // free(name2); - was not separately allocated
-            }
-            free(name);
-        }
-    }
-    void BindStates()
-    {
-        TabType state_cache;
-        {for(state* s = states; s; s = s->next)
-        {
-            table_item tmp;
-            tmp.token = s->name;
-            tmp.state = s;
-            state_cache.push_back(tmp);
-        }}
-        sort(state_cache);
-
-        // Translate state names to state pointers.
-        for(;;)
-        {
-            for(unsigned a=0; a<256; ++a)
-            {
-            //tail:;
-                option*& o = states->options[a];
-                if(!o)
-                {
-                    fprintf(stdout, "In state '%s', character state %u/256 not specified\n", states->name, a);
-                    continue;
-                }
-                Remap(o, state_cache, a, states->name);
-                while(o->noeat && o->recolor <= 1 && !o->buffer && !o->strings && !o->mark && !o->markend && !o->recolormark)
-                {
-                    EditorCharType orig_attr = states->attr;
-                    EditorCharType new_attr  = o->state->attr;
-                    int had_recolor          = o->recolor > 0;
-
-                    o = o->state->options[a];
-                    Remap(o, state_cache, a, o->state->name);
-
-                    if(o->state->options[a]->recolor < 1 && (had_recolor || new_attr != orig_attr))
-                    {
-                        o->state->options[a]->recolor = 1;
-                    }
-                }
-            }
-            if(!states->next) break;
-            // Get the first-inserted state (last in chain) as starting-point.
-            states = states->next;
-        }
-    }
-
-    #if !(defined(__cplusplus) && __cplusplus >= 201100L)
-    static int TableItemCompareForSort(const void * a, const void * b)
-    {
-        table_item * aa = (table_item *)a;
-        table_item * bb = (table_item *)b;
-        return strcmp(aa->token, bb->token);
-    }
-    #endif
-    static inline void sort(TabType& tab)
-    {
-        /*
-        // Sort the table using insertion sort
-        unsigned b = tab.size();
-        for(unsigned i, j=1; j<b; ++j)
-        {
-            table_item k = tab[j];
-            for(i=j; i>=1 && strcmp( k.token, tab[i-1].token ) > 0; ++i)
-                tab[i] = tab[i-1];
-            tab[i] = k;
-        }
-        */
-        #if defined(__cplusplus) && __cplusplus >= 201100L
-        std::sort(tab.begin(), tab.end(), [&](table_item& a, table_item& b)
-                                          { return strcmp(a.token, b.token) < 0; });
-        #else
-        qsort(&tab[0], tab.size(), sizeof(tab[0]), TableItemCompareForSort);
-        #endif
-    }
+public:
     void Clear()
     {
-        TabType del_list;
-        // States form a linked list; it is easy to go through and delete.
-        // However, options have to be garbage-collected. We use "strings=3"
-        // as a flag indicating the option has been already marked for deletion.
-        for(state* s = states; s; )
-        {
-            if(s->name) { free(s->name); s->name = nullptr; }
+        for(unsigned ptr=0; ptr<all_states.size(); ++ptr)
+            delete (state*)all_states[ptr];
 
-            option** o = s->options;
-            for(unsigned n=0; n<256; ++n)
-            {
-                register option* opt = *o++;
-                if(!opt || opt->strings==3) continue;
-                opt->strings = 3;
-                table_item i;
-                i.state = (state*)opt; del_list.push_back(i);
-            }
-
-            state* tmp = s;
-            s = s->next;
-            delete tmp;
-        }
-        for(unsigned b=del_list.size(); b-- > 0; )
-        {
-            option* o = (option*) del_list[b].state;
-            TabType& str = o->stringtable;
-            for(unsigned c=str.size(); c-- > 0; )
-                if(str[c].token)
-                    free(str[c].token);
-            delete o;
-        }
+        string_tables.clear();
+        all_strings.clear();
+        all_options.clear();
+        all_states.clear();
+        first_state = nullptr;
     }
+    JSF(const JSF& b) { operator=(b); }
+    JSF& operator=(const JSF& b)
+    {
+        if(this != &b)
+        {
+            all_states.clear();
+            all_strings   = b.all_strings;
+            string_tables = b.string_tables;
+            all_options   = b.all_options;
+            first_state   = b.first_state;
+            for(unsigned ptr=0; ptr<b.all_states.size(); ++ptr)
+                all_states.push_back((unsigned long)new state(*(const state*)b.all_states[ptr]));
+        }
+        return *this;
+    }
+#if defined(__cplusplus) && __cplusplus >= 201100L
+    JSF& operator=(JSF&& b)
+    {
+        if(this != &b)
+        {
+            all_strings = std::move(b.all_strings);
+            string_tables = std::move(b.string_tables);
+            all_options = std::move(b.all_options);
+            all_states = std::move(b.all_states);
+            first_state = std::move(b.first_state);
+        }
+        return *this;
+    }
+    JSF(JSF&& b) { operator=(std::move(b)); }
+#endif
 };

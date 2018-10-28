@@ -1,5 +1,5 @@
-CXX=i586-pc-msdosdjgpp-g++
-CXXFLAGS=-Ofast -g -flto
+CXX=g++
+CXXFLAGS=-Ofast -g
 CPPFLAGS=-std=gnu++17 -Wall -Wextra
 
 INCLUDES=jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh vec_sp.hh \
@@ -7,12 +7,37 @@ INCLUDES=jsf.hh mario.hh vga.hh vec_l.hh vec_lp.hh vec_c.hh vec_cp.hh vec_s.hh v
 
 OBJS=main.o mario.o vga.o kbhit.o
 
-#CXXFLAGS += -fsanitize=address
+#CXXFLAGS = -g -pg
 
-e.exe: $(OBJS)
-	$(CXX) -o $@ $(OBJS) $(CXXFLAGS) $(CPPFLAGS) $(LDFLAGS) $(LDLIBS)
+LXOBJS     := $(patsubst %.o,%.lx.o,$(OBJS))
+LXCXX      := $(CXX)
+LXCXXFLAGS := $(CXXFLAGS)
+LXCPPFLAGS := $(CPPFLAGS)
+LXCPPFLAGS += $(shell pkg-config sdl2 --cflags) -pthread -fopenmp
+LXLIBS     += $(shell pkg-config sdl2 --libs) -pthread -fopenmp
+#LXCXXFLAGS += -fsanitize=address
 
-$(OBJS):  $(INCLUDES)
+DJOBJS     := $(patsubst %.o,%.dj.o,$(OBJS))
+DJCXX      := i586-pc-msdosdjgpp-$(CXX)
+DJCXXFLAGS := $(CXXFLAGS)
+DJCPPFLAGS := $(CPPFLAGS)
+
+all:	e.exe e
+
+e.exe: $(DJOBJS)
+	$(DJCXX) -o $@ $^ $(DJCXXFLAGS) $(DJLIBS)
+
+e: $(LXOBJS)
+	$(LXCXX) -o $@ $^ $(LXCXXFLAGS) $(LXLIBS)
+
+define lxo
+$(P).dj.o: $(P).cc $(INCLUDES)
+	$(DJCXX) -c -o $(P).dj.o $(P).cc $(DJCXXFLAGS) $(DJCPPFLAGS)
+$(P).lx.o: $(P).cc $(INCLUDES)
+	$(LXCXX) -c -o $(P).lx.o $(P).cc $(LXCXXFLAGS) $(LXCPPFLAGS) -march=native
+
+endef
+$(eval $(foreach P,$(patsubst %.o,%,$(OBJS)),$(call lxo)))
 
 
 # To install DJGPP on Debian:

@@ -320,42 +320,17 @@ static void VisSoftCursor(int mode)
 }
 void VisPutCursorAt(unsigned cx,unsigned cy)
 {
-#if defined(__BORLANDC__) || defined(__DJGPP__)
-    if(columns > 1)
-    {
-        register unsigned short h = (VidH-1) / columns;
-        cx += ((cy-1) / h) * VidW;
-        cy =  ((cy-1) % h) + 1;
-    }
-    if(FatMode) cx *= 2;
-    unsigned char cux = cx, cuy = cy;
-
+#ifdef __BORLANDC__
     unsigned size = InsertMode ? (VidCellHeight-2) : (VidCellHeight*2/8);
     size = (size << 8) | (VidCellHeight-1);
     if(C64palette) size = 0x3F3F;
-    #ifdef __DJGPP__
-    unsigned addr = cux + cuy*VidW;
-    _farpokeb(_dos_ds, 0x450, (cuy<<8) + cux);
-    outportw(0x3D4, 0x0E + (addr&0xFF00));
-    outportw(0x3D4, 0x0F + ((addr&0xFF)<<8));
-    // Set cursor shape: lines-4 to lines-3, or 6 to 7
-    outportw(0x3D4, 0x0A + ((VidCellHeight>8 ? VidCellHeight-4 : 6) << 8));
-    outportw(0x3D4, 0x0B + ((VidCellHeight>8 ? VidCellHeight-3 : 7) << 8));
-    #else
-    _asm { mov ah, 2; mov bh, 0; mov dh, cuy; mov dl, cux; int 0x10 }
-    _asm { mov ah, 1; mov cx, size; int 0x10 }
-    #endif
+#else
+    unsigned top    = VidCellHeight>8 ? VidCellHeight-4 : 6;
+    unsigned bottom = VidCellHeight>8 ? VidCellHeight-3 : 7;
+    unsigned size = (top<<8) | bottom;
+#endif
+    VgaPutCursorAt(cx,cy, size);
     CursorCounter=0;
-#else
-    cx=cx; cy=cy;
-#endif
-#ifdef __DJGPP__
-    _farpokeb(_dos_ds, 0x450, cx);
-    _farpokeb(_dos_ds, 0x451, cy);
-#else
-    *(unsigned char*)MK_FP(0x40,0x50) = cx;
-    *(unsigned char*)MK_FP(0x40,0x51) = cy;
-#endif
 }
 void VisSetCursor()
 {
@@ -407,6 +382,10 @@ static void Cycles_Check()
         /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
          * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
         __asm__ volatile("movl %0, %%tr2" : : "a"(CYCLES_Current));
+
+        #else
+
+        #warning "No CPU speed control"
 
         #endif
     }
@@ -537,7 +516,7 @@ static const char* StatusGetCPUspeed()
     #elif defined(__DJGPP__)
     unsigned long now_when = _farpeekl(_dos_ds, 0x46C) & ~7ul;
     #else
-    unsigned long now_when = 0;
+    unsigned long now_when = (MarioTimer&31)==0;
     #endif
     static char Part6[18]; // 11+2+4+nul
     if(last_check_when != now_when)
@@ -583,17 +562,19 @@ static const char* StatusGetClock()
 /* VisRenderTitleAndStatus: Renders the title bar and the status bar.
  *                  Status bar is only rendered if non-empty.
  */
-static void VisRenderTitleAndStatus()
+static void VisRenderTitleAndStatus(int force=0)
 {
     // Only re-render status once per frame
     static unsigned long LastMarioTimer = 0xFFFFFFFFul;
     static unsigned long last_check_when = 0;
-    if(MarioTimer == LastMarioTimer) return;
+    if(MarioTimer == LastMarioTimer && !force) return;
     LastMarioTimer = MarioTimer;
 
     unsigned StatusWidth = VidW*columns;
 
-    static EditorCharVecType Hdr; Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
+    static EditorCharVecType Hdr;
+    //fprintf(stderr, "Hdr size: %u\n", (FatMode ? StatusWidth*2 : StatusWidth));
+    Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
     // We do the Mario update every frame, but this buffer is updated
     // less frequently, only ~18 times a second, because it's rather heavy.
     #ifdef __BORLANDC__
@@ -601,7 +582,7 @@ static void VisRenderTitleAndStatus()
     #elif defined(__DJGPP__)
     unsigned long now_when = _farpeekl(_dos_ds, 0x46C);
     #else
-    unsigned long now_when = 0;
+    unsigned long now_when = MarioTimer & ~7;
     #endif
     if(now_when != last_check_when)
     {
@@ -617,7 +598,7 @@ static void VisRenderTitleAndStatus()
         // RIGHT-side parts
         const char* Part3 = StatusGetClock();
         static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
-        static const char Part5[] = "+8.2øC"; // temperature degC degrees celsius
+        static const char Part5[] = "+4.0øC"; // temperature degC degrees celsius
 
         const char* Part6 = StatusGetCPUspeed();
 
@@ -723,7 +704,6 @@ static void VisRenderTitleAndStatus()
     }
     // Then translate the Hdr[] buffer on screen using MarioTranslate.
     MarioTranslate(&Hdr[0], GetVidMem(0,0,1), StatusWidth);
-
     VisRenderStatusLine();
 }
 
@@ -818,7 +798,7 @@ static void WaitInput(bool may_redraw = true)
     // There is work to do, so request more CPU speed
     Cycles_Adjust(1);
 
-    // Quickly skip doing anything if no key has been presed
+    // Quickly skip doing anything if a key has been presed
     if(kbhit()) return;
 
     // Adjust window position horizontally making sure cursor is on screen
@@ -893,20 +873,15 @@ static void WaitInput(bool may_redraw = true)
         VisSoftCursor(0);
 
         if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect
-        || SyntaxCheckingNeeded != SyntaxChecking_DoingFull)
+    #if defined(__BORLANDC__) || defined(__DJGPP__)
+        || SyntaxCheckingNeeded != SyntaxChecking_DoingFull
+    #endif
+        || !may_redraw
+          )
         {
             if(SyntaxCheckingNeeded == SyntaxChecking_IsPerfect)
                 Cycles_Adjust(-1);
-          #ifdef __BORLANDC__
-            _asm { hlt }
-          #elif defined(__DJGPP__)
-            //__dpmi_yield();
-            __asm__ volatile("hlt");
-            // dpmi_yield is not used, because it's not implemented in dosbox
-            // Instead, we issue "hlt" and patch DOSBox to not produce an exception
-            /* HUGE WARNING: THIS *REQUIRES* A PATCHED DOSBOX,
-             * UNPATCHED DOSBOXES WILL TRIGGER AN EXCEPTION HERE */
-          #endif
+            KbIdle();
         }
     }
 }
@@ -1460,7 +1435,7 @@ static int VerifyUnsavedExit(const char* action)
     VisSoftCursor(-1);
     int s = sprintf(StatusLine, "FILE IS UNSAVED. PROCEED WITH %s? Y/N  ", action);
     VisPutCursorAt(s-1, VidH-1);
-    VisRenderTitleAndStatus();
+    VisRenderTitleAndStatus(1);
     int decision = 0;
     for(;;)
     {
@@ -1497,7 +1472,7 @@ static int PromptText(const char* message, const char* deftext, char** result)
         strcpy(buffer+1, data+firstPos);
         buffer[0]       = firstPos > 0 ? arrow_left : ' ';
         buffer[sizex-1] = data_length-firstPos > (sizex-2) ? arrow_right : ' ';
-        VisRenderTitleAndStatus();
+        VisRenderTitleAndStatus(1);
         VisPutCursorAt(begin_offset + (curPos-firstPos+1), VidH-1);
 
         WaitInput();
@@ -1519,14 +1494,14 @@ static int PromptText(const char* message, const char* deftext, char** result)
                     case 0x47: kb_hom: curPos = 0; break;
                     case 0x4F: kb_end: curPos = data_length; break;
                     case 0x53: kb_del: if(curPos >= data_length) break;
-                                       strcpy(data+curPos, data+curPos+1);
+                                       memmove(data+curPos, data+curPos+1, strlen(data+curPos+1)+1);
                                        break;
                     case 0x52: InsertMode = !InsertMode; break;
                 }
                 break;
             case CTRL('H'):
                 if(curPos <= 0) break;
-                strcpy(data+curPos-1, data+curPos);
+                memmove(data+curPos-1, data+curPos, strlen(data+curPos)+1);
                 --curPos;
                 if(firstPos > 0) --firstPos;
                 break;
@@ -1587,7 +1562,7 @@ static void InvokeSave(int ask_name)
     unsigned long size = ftell(fp);
     fclose(fp);
     sprintf(StatusLine, "Saved %lu bytes to %s", size, CurrentFileName);
-    VisRenderTitleAndStatus();
+    VisRenderTitleAndStatus(1);
     UnsavedChanges = false;
 }
 static inline void InvokeLoad()
@@ -1637,7 +1612,7 @@ static inline void LineAskGo() // Go to line
             : Cur.y;
     }
     Win.x = 0;
-    VisRenderTitleAndStatus();
+    VisRenderTitleAndStatus(1);
     VisRender();
 }
 void ResizeAsk() // Ask for new screen dimensions
@@ -1729,9 +1704,8 @@ int main(int argc, char**argv)
     __djgpp_nearptr_enable();
 #endif
 
-#if defined(__BORLANDC__) || defined(__DJGPP__)
     InstallMario();
-#endif
+
     Syntax.Parse("c.jsf");
     FileNew();
     if(argc == 2)
@@ -1743,6 +1717,10 @@ int main(int argc, char**argv)
 
     VgaGetMode();
     VisSetCursor();
+
+#if !(defined(__BORLANDC__) || defined(__DJGPP__))
+    VgaSetCustomMode(80,25, 16, use9bit=true, dblw=true,dblh=true, 1);
+#endif
 
 #if defined(__BORLANDC__) || defined(__DJGPP__)
     // Read the rest of mode settings
@@ -1773,7 +1751,8 @@ int main(int argc, char**argv)
 #elif defined(__DJGPP__)
         int shift = 3 & _farpeekb(_dos_ds, 0x417);
 #else
-        int shift = 0;
+        extern bool kbshift;
+        int shift = kbshift;
 #endif
 
         // If there is a status line visible, and its expiration timer
@@ -2085,7 +2064,7 @@ int main(int argc, char**argv)
                         {
                         newmode:
                             if(VidW > 240) VidW = 240;
-                            if(VidH > 127) VidH = 127;
+                            if(VidH > 240) VidH = 240;
                             VgaSetCustomMode(VidW,VidH, VidCellHeight,
                                              use9bit, dblw, dblh,
                                              1);
@@ -2116,7 +2095,7 @@ int main(int argc, char**argv)
                             sprintf(res, "%ux%u, %ld.%03ld fps", VidW,VidH, fpsval/1000, fpsval%1000);
                             sprintf(StatusLine, "READY%*s", VidW-5, res);
                         }
-                        VisRenderTitleAndStatus();
+                        VisRenderTitleAndStatus(1);
                         StatusLineProtection = MarioTimer + 200u;
                         break;
                     case 0x43: // F9
@@ -2234,9 +2213,10 @@ exit:;
         VgaSetCustomMode(VidW,VidH, VidCellHeight, use9bit, dblw, dblh, 1);
     }
     VisSetCursor();
-#if defined(__BORLANDC__) || defined(__DJGPP__)
+
     DeInstallMario();
-#endif
+    Syntax.Clear();
+
     exit(0);
     return 0;
 }

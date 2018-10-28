@@ -7,9 +7,11 @@
 # include <dos.h>
 # include <dpmi.h>
 # include <go32.h>
-#endif
-#ifdef __BORLANDC__
+#elif defined(__BORLANDC__)
 # include <dos.h>
+#else
+# include <thread>
+# include <chrono>
 #endif
 
 //#include <string.h>
@@ -290,8 +292,9 @@ void MarioTranslate(
             pop es
         }
     }
-#endif
-#ifdef __DJGPP__
+
+#else
+
     if(numchars > 0)
     {
         // Remap 00, 03-04, 08-09 and 0D
@@ -302,11 +305,12 @@ void MarioTranslate(
         VgaSetFont(VidCellHeight, 1, base+0xD, RevisedFontData+VidCellHeight*5);
         VgaDisableFontAccess();
     }
+
 #endif
 }
 
 #ifdef __BORLANDC__
-static unsigned short rate=120U, Clock=0u, Counter=0x1234DCUL/rate;
+static unsigned short Clock=0, Counter=0;
 static void (interrupt *OldI08)();
 static void interrupt MarioI08()
 {
@@ -321,9 +325,10 @@ static void interrupt MarioI08()
 P1: _asm { mov al, 0x20; out 0x20, al }
 P2:;
 }
-#endif
-#ifdef __DJGPP__
-static unsigned rate=60U, Clock=0u, Counter=0x1234DCUL/rate;
+
+#elif defined(__DJGPP__)
+
+static unsigned Clock=0, Counter=0;
 static _go32_dpmi_seginfo OldI08_rm, NewI08_rm;
 static _go32_dpmi_seginfo OldI08_pm, NewI08_pm;
 static _go32_dpmi_registers I08regs;
@@ -372,32 +377,61 @@ static void MarioI08_pm()
     }
     outportb(0x20,0x20);
 }
+
+#else
+
+static std::thread MarioThread;
+static volatile bool EndMarioThread = false;
+
+static void MarioThreadRunner(unsigned rate)
+{
+    std::chrono::duration<double> period(1.0 / rate);
+    while(!EndMarioThread)
+    {
+        MarioTimer += 2;
+        std::this_thread::sleep_for(period);
+    }
+}
+
 #endif
 
 void FixMarioTimer()
 {
+#if defined(__BORLANDC__)
     disable();
-#ifdef __BORLANDC__
     _asm { mov al, 0x34;    out 0x43, al
            mov ax, Counter; out 0x40, al
            mov al, ah;      out 0x40, al }
-#endif
-#ifdef __DJGPP__
+    enable();
+
+#elif defined(__DJGPP__)
+
+    disable();
     outportb(0x43,0x34);
     outportb(0x40, Counter);
     outportb(0x40, Counter>>8);
-#endif
     enable();
+
+#else
+#endif
 }
 
 void InstallMario()
 {
 #ifdef __BORLANDC__
+    unsigned short rate = 120u;
+#else
+    unsigned rate = 60u;
+#endif
+
+#ifdef __BORLANDC__
+    Counter = 0x1234DCUL / rate;
     disable();
     OldI08 = (void(interrupt*)()) *(void **)MK_FP(0, 8*4);
     *(void **)MK_FP(0, 8*4) = (void *)MarioI08;
-#endif
-#ifdef __DJGPP__
+    FixMarioTimer();
+#elif defined(__DJGPP__)
+    Counter = 0x1234DCUL / rate;
     _go32_dpmi_get_real_mode_interrupt_vector(8, &OldI08_rm);
     NewI08_rm.pm_offset = (unsigned long)MarioI08_rm;
     NewI08_rm.pm_selector = _go32_my_cs();
@@ -409,8 +443,11 @@ void InstallMario()
     NewI08_pm.pm_selector = _go32_my_cs();
     _go32_dpmi_allocate_iret_wrapper(&NewI08_pm);
     _go32_dpmi_set_protected_mode_interrupt_vector(8, &NewI08_pm);
-#endif
     FixMarioTimer();
+#else
+    EndMarioThread = false;
+    MarioThread = std::thread(MarioThreadRunner, rate);
+#endif
 }
 
 void DeInstallMario()
@@ -418,19 +455,17 @@ void DeInstallMario()
 #ifdef __BORLANDC__
     disable();
     *(void **)MK_FP(0, 8*4) = (void *)OldI08;
-    _asm { mov al, 0x34;    out 0x43, al
-           xor al, al;      out 0x40, al
-           /*********/      out 0x40, al }
     enable();
-#endif
-#ifdef __DJGPP__
+    Counter = 0;
+    FixMarioTimer();
+#elif defined(__DJGPP__)
     _go32_dpmi_set_real_mode_interrupt_vector(8, &OldI08_rm);
     _go32_dpmi_set_protected_mode_interrupt_vector(8, &OldI08_pm);
     _go32_dpmi_free_iret_wrapper(&NewI08_pm);
-    disable();
-    outportb(0x43,0x34);
-    outportb(0x40,0);
-    outportb(0x40,0);
-    enable();
+    Counter = 0;
+    FixMarioTimer();
+#else
+    EndMarioThread = true;
+    MarioThread.join();
 #endif
 }
