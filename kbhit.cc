@@ -97,11 +97,25 @@ static std::string pending_input;
 bool kbshift=false;
 static Uint32 last_ev_time=0, rewind_ptr=0;
 
+extern void VgaRedraw(int);
+
 static void ProcessEvent(SDL_Event& ev)
 {
     //fprintf(stderr, "ev type %u\n", ev.type);
     switch(ev.type)
     {
+        case SDL_WINDOWEVENT:
+            //fprintf(stderr, "window event %d\n", ev.window.event);
+            switch(ev.window.event)
+            {
+                case SDL_WINDOWEVENT_EXPOSED:
+                case SDL_WINDOWEVENT_RESIZED:
+                case SDL_WINDOWEVENT_SIZE_CHANGED:
+                    VgaRedraw(1);
+                default:
+                    break;
+            }
+            break;
         case SDL_QUIT:
             pending_input += CTRL('c');
             break;
@@ -275,10 +289,7 @@ void KbIdle()
 {
     if(!pending_input.empty()) return;
 
-#if !(defined(__BORLANDC__) || defined(__DJGPP__))
-    extern void VgaRedraw();
-    VgaRedraw();
-#endif
+    VgaRedraw(0);
 
     // Wait for an event, update cursor and stuff though
     SDL_Event ev;

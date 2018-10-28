@@ -181,10 +181,15 @@ namespace
         pixbuf.resize(bufpixels_width*bufpixels_height);
         cursor_old=~0u;
         //fprintf(stderr, "resized\n");
+
+        // For some reason, the first few screen updates may end up lost,
+        // so this counter forces full refreshes until the update might actually show.
         redoes=3;
     }
-    void SDL_ReDraw()
+    void SDL_ReDraw(bool force)
     {
+        if(force) cursor_old = ~0ul;
+
         SDL_Rect rect;
         rect.x=0; rect.w=bufpixels_width;
         rect.y=0; rect.h=0;
@@ -193,9 +198,15 @@ namespace
         {
             if(rect.h)
             {
-                SDL_Rect trect = rect;
-                if(dbl_pix) { trect.x *= 2; trect.w *= 2; }
-                if(cell_height_pixels != VidCellHeight) { trect.y *= 2; trect.h *= 2; }
+                int w,h;
+                SDL_GetWindowSize(window, &w,&h);
+
+                SDL_Rect trect;
+                trect.x = rect.x * w / bufpixels_width;
+                trect.y = rect.y * h / bufpixels_height;
+                trect.w = (rect.x + rect.w) * w / bufpixels_width - trect.x;
+                trect.h = (rect.y + rect.h) * h / bufpixels_height - trect.y;
+
                 if(SDL_UpdateTexture(texture, &rect,
                                      pixbuf.data() + rect.y*bufpixels_width,
                                      bufpixels_width*sizeof(pixbuf[0]))) ++errors;
@@ -869,13 +880,13 @@ void VgaPutCursorAt(unsigned cx, unsigned cy, unsigned shape)
 
 #if !(defined(__BORLANDC__) || defined(__DJGPP__))
 static unsigned long last_timer;
-void VgaRedraw()
+void VgaRedraw(int force)
 {
     unsigned long tick = MarioTimer;
-    if(tick != last_timer)
+    if(tick != last_timer || force)
     {
         last_timer = tick;
-        SDL_ReDraw();
+        SDL_ReDraw(force);
     }
 }
 #endif
