@@ -123,8 +123,8 @@ namespace
     SDL_Window*   window   = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture*  texture  = nullptr;
-    unsigned cells_horiz, cell_width_pixels,  pixels_width;
-    unsigned cells_vert,  cell_height_pixels, pixels_height;
+    unsigned cells_horiz, cell_width_pixels,  pixels_width,  bufpixels_width;
+    unsigned cells_vert,  cell_height_pixels, pixels_height, bufpixels_height;
     unsigned cursor_x=0, cursor_y=0, cursor_shape=0, cursor_old=0;
     bool nine_pix = false, dbl_pix = false;
     std::vector<Uint16> pixbuf;
@@ -141,10 +141,13 @@ namespace
         cell_height_pixels = VidCellHeight * (cells_doubletall ? 2 : 1);
         pixels_width  = cells_horizontal * cell_width_pixels,
         pixels_height = cells_vertical   * cell_height_pixels;
-        fprintf(stderr, "Cells: %ux%u, pix sizes: %ux%u (%u), pixels: %ux%u\n",
+        bufpixels_width = cells_horizontal * (nine_pix?9:8);
+        bufpixels_height = cells_vertical  * VidCellHeight;
+        fprintf(stderr, "Cells: %ux%u, pix sizes: %ux%u (%u), pixels: %ux%u, buf: %ux%u\n",
             cells_horiz,cells_vert,
             cell_width_pixels,cell_height_pixels, VidCellHeight,
-            pixels_width,pixels_height);
+            pixels_width,pixels_height,
+            bufpixels_width,bufpixels_height);
 
         if(texture)
         {
@@ -167,13 +170,37 @@ namespace
         }
 
         texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGB565,
-            SDL_TEXTUREACCESS_STREAMING, pixels_width, pixels_height);
+            SDL_TEXTUREACCESS_STREAMING,
+            bufpixels_width,
+            bufpixels_height);
 
-        pixbuf.resize(pixels_width*pixels_height);
+        pixbuf.resize(bufpixels_width*bufpixels_height);
     }
     void SDL_ReDraw()
     {
-        const unsigned vratio = (cell_height_pixels/VidCellHeight);
+        SDL_Rect rect;
+        rect.x=0; rect.w=bufpixels_width;
+        rect.y=0; rect.h=0;
+        auto RenderFlushLines = [&]()
+        {
+            if(rect.h)
+            {
+                SDL_Rect trect = rect;
+                if(dbl_pix) { trect.x *= 2; trect.w *= 2; }
+                if(cell_height_pixels != VidCellHeight) { trect.y *= 2; trect.h *= 2; }
+                SDL_UpdateTexture(texture, &rect,
+                                  pixbuf.data() + rect.y*bufpixels_width,
+                                  bufpixels_width*sizeof(pixbuf[0]));
+                SDL_RenderCopy(renderer, texture, &rect, &trect);
+                rect.y += rect.h; rect.h = 0;
+            }
+        };
+        auto RenderAddLine = [&](unsigned line)
+        {
+            if(line <= rect.y+rect.h+15) rect.h = line+1-rect.y;
+            else { RenderFlushLines(); rect.y=line; rect.h=1; }
+        };
+
         unsigned cursor_now = cursor_x+cursor_y*cells_horiz+(cursor_shape<<16);
         //#pragma omp parallel for num_threads(2)
         for(unsigned cy=0; cy<cells_vert; ++cy)
@@ -195,10 +222,8 @@ namespace
                 memcpy(vidmem_bak+o, vidmem+o, cells_horiz*2);
             }
 
-            for(unsigned oy=0; oy<cell_height_pixels; ++oy)
+            for(unsigned line=0; line<VidCellHeight; ++line)
             {
-                unsigned line = oy/vratio;
-
                 unsigned cursor_position = ~0u;
                 if(cy == cursor_y
                 && line >= (cursor_shape >> 8)
@@ -210,7 +235,7 @@ namespace
                 if(cursor_position == ~0u && same) continue;
                 if(MarioTimer & 8) cursor_position = ~0u;
 
-                unsigned short* draw = &pixbuf[(cy*cell_height_pixels+oy)*pixels_width];
+                unsigned short* draw = &pixbuf[(cy*VidCellHeight+line)*bufpixels_width];
                 for(unsigned cx=0; cx<cells_horiz; ++cx)
                 {
                     unsigned short cell1 = vidmem[cx], cell2 = vidmem[cx + DOSBOX_HICOLOR_OFFSET/2];
@@ -298,30 +323,20 @@ namespace
     /*mode 11*/{0,0,1,2,1,1,2,3,0,0,1,2,1,1,2,3,},
                         };
                         Uint16 colors[4] = {bg, xterm256_blend12[bg_attr][fg_attr], xterm256_blend12[fg_attr][bg_attr], fg};
-                        if(dbl_pix)
-                            for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
-                            {
-                                unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
-                                unsigned c = colors[taketables[mode][mask]];
-                                *draw++ = c;
-                                *draw++ = c;
-                            }
-                        else
-                            for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
-                            {
-                                unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
-                                unsigned c = colors[taketables[mode][mask]];
-                                *draw++ = c;
-                            }
+                        for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
+                        {
+                            unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
+                            unsigned c = colors[taketables[mode][mask]];
+                            *draw++ = c;
+                        }
                     }
                 }
+                RenderAddLine(cy*VidCellHeight+line);
             }
         }
-        cursor_old = cursor_now;
-        SDL_Rect rect; rect.w=pixels_width; rect.h=pixels_height; rect.y=0; rect.x=0;
-        SDL_UpdateTexture(texture, &rect, pixbuf.data(), pixels_width*sizeof(pixbuf[0]));
-        SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+        RenderFlushLines();
         SDL_RenderPresent(renderer);
+        cursor_old = cursor_now;
     }
 }
 #endif
