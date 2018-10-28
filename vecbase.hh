@@ -455,6 +455,18 @@ public:
             cap  = newcap;
         }
     }
+    void shrink_to_fit()
+    {
+        size_type newcap = size();
+        if(newcap == cap) return;
+        T * newdata = allocate(newcap);
+        if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", (unsigned)newcap);
+        move_construct(&newdata[0], &data[0], len);
+        destroy(&data[0], len);
+        deallocate(data, cap);
+        data = newdata;
+        cap  = newcap;
+    }
 
     void pop_back()
     {

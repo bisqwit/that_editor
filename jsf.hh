@@ -29,9 +29,11 @@ class JSF
 #endif
 {
 public:
-    JSF()
+    JSF() : all_strings(),string_tables(),all_options(),all_states(),first_state(nullptr)
     {
+        //fprintf(stdout, "JSF init... "); fflush(stdout);
         Clear();
+        //fprintf(stdout, "done\n"); fflush(stdout);
     }
     ~JSF()
     {
@@ -131,16 +133,20 @@ public:
 
     void Parse(FILE* fp)
     {
-        Clear();
-
         fprintf(stdout, "Parsing syntax file... "); fflush(stdout);
+
+        Clear();
 
         CharVecType colornames;
         LongVecType colordata;
         bool colors_sorted = false;
         unsigned options_merged = 0, state_bytes = 0;
+        all_options.reserve(256*sizeof(option));
+        all_states.reserve(256*2);
+        colornames.reserve(16384);
+        colordata.reserve(256);
 
-        struct state* current_state          = nullptr;
+        struct state* current_state = nullptr;
 
         char Buf[512] = {0};
         while(fgets(Buf, sizeof(Buf), fp))
@@ -257,6 +263,7 @@ public:
             }
         }
         fprintf(stdout, "Binding... "); fflush(stdout);
+        colordata.clear();
 
         // This is BindStates().
         // Sort the state names for quick lookup
@@ -323,6 +330,11 @@ public:
             options_merged, state_bytes);
         fflush(stdout);
         // colornames & colordata will be freed automatically due to scope.
+        colornames.clear();
+        all_strings.shrink_to_fit();
+        string_tables.shrink_to_fit();
+        all_options.shrink_to_fit();
+        all_states.shrink_to_fit();
     }
     struct ApplyState
     {

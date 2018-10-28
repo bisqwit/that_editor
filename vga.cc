@@ -13,6 +13,7 @@ unsigned short* VidMem = ((unsigned short *) MK_FP(0xB000, 0x8000));
 #else
 
 unsigned short VideoBuffer[DOSBOX_HICOLOR_OFFSET*-2]; // Two pages
+unsigned short VideoBuffer_Bak[DOSBOX_HICOLOR_OFFSET*-2];
 unsigned char  FontBuffer[256 * 32];
 #include <SDL.h>
 #include <vector>
@@ -124,7 +125,7 @@ namespace
     SDL_Texture*  texture  = nullptr;
     unsigned cells_horiz, cell_width_pixels,  pixels_width;
     unsigned cells_vert,  cell_height_pixels, pixels_height;
-    unsigned cursor_x=0, cursor_y=0, cursor_shape=0;
+    unsigned cursor_x=0, cursor_y=0, cursor_shape=0, cursor_old=0;
     bool nine_pix = false, dbl_pix = false;
     std::vector<Uint16> pixbuf;
     void SDL_ReInitialize(unsigned cells_horizontal, unsigned cells_vertical,
@@ -173,127 +174,150 @@ namespace
     void SDL_ReDraw()
     {
         const unsigned vratio = (cell_height_pixels/VidCellHeight);
-        #pragma omp parallel for
-        for(unsigned py=0; py<pixels_height; ++py)
+        unsigned cursor_now = cursor_x+cursor_y*cells_horiz+(cursor_shape<<16);
+        //#pragma omp parallel for num_threads(2)
+        for(unsigned cy=0; cy<cells_vert; ++cy)
         {
-            unsigned cy = py / cell_height_pixels;
-            unsigned line = (py % cell_height_pixels) / vratio;
             const unsigned short* vidmem = VidMem + cy*cells_horiz;
+            bool same = false;
 
-            unsigned cursor_position = ~0u;
-            if(cy == cursor_y
-            && (MarioTimer & 8)
-            && line >= (cursor_shape >> 8)
-            && line <= (cursor_shape&0xFF))
+            unsigned short* vidmem_bak   = VideoBuffer_Bak + (vidmem - VideoBuffer);
+            int o = DOSBOX_HICOLOR_OFFSET/2;
+            if(cursor_now == cursor_old
+            && memcmp(vidmem_bak,   vidmem,   cells_horiz*2) == 0
+            && memcmp(vidmem_bak+o, vidmem+o, cells_horiz*2) == 0)
             {
-                cursor_position = cursor_x;
+                same = true;
             }
-            unsigned short* draw = &pixbuf[py*pixels_width];
-            for(unsigned cx=0; cx<cells_horiz; ++cx)
+            else
             {
-                unsigned short cell1 = vidmem[cx], cell2 = vidmem[cx + DOSBOX_HICOLOR_OFFSET/2];
-                unsigned char chr  = cell1 & 0xFF, col = cell1 >> 8;
-                unsigned char ext1 = cell2 & 0xFF, ext2 = cell2 >> 8;
+                memcpy(vidmem_bak,   vidmem,   cells_horiz*2);
+                memcpy(vidmem_bak+o, vidmem+o, cells_horiz*2);
+            }
 
-                /*chr='A'; col=0x17; ext1=ext2=0;*/
+            for(unsigned oy=0; oy<cell_height_pixels; ++oy)
+            {
+                unsigned line = oy/vratio;
 
-                unsigned char font = FontBuffer[chr*32 + line];
-                //unsigned char fg = col&0xF, bg = col>>4;
-                if(ext2 == 7 && ext1 == 0x20) ext2 = ext1 = 0;
-                bool flag_underline = ext2 & 0x01;
-                bool flag_dim       = ext2 & 0x02;
-                bool flag_italic    = ext2 & 0x04;
-                bool flag_bold      = ext2 & 0x08;
-                bool flag_blink     = ext2 & 0x20;
-                bool flag_ext       = (ext2 & col & 0x80);
-                if(!flag_ext)
+                unsigned cursor_position = ~0u;
+                if(cy == cursor_y
+                && line >= (cursor_shape >> 8)
+                && line <= (cursor_shape&0xFF))
                 {
-                    flag_blink = col >> 7;
-                    ext1       = col>>4;   ext1 = (ext1&1)*4 + (ext1&2) + (ext1&4)/4 + (ext1&8);
-                    col        = (col&15); col = (col&1)*4 + (col&2) + (col&4)/4 + (col&8);
+                    cursor_position = cursor_x;
                 }
-                //if(flag_blink && (MarioTimer & 32)) font = 0;
 
-                unsigned widefont;
-                if(cx == cursor_position)
-                    widefont = 0xFF << 1;
-                else
+                if(cursor_position == ~0u && same) continue;
+                if(MarioTimer & 8) cursor_position = ~0u;
+
+                unsigned short* draw = &pixbuf[(cy*cell_height_pixels+oy)*pixels_width];
+                for(unsigned cx=0; cx<cells_horiz; ++cx)
                 {
-                    widefont = font;
+                    unsigned short cell1 = vidmem[cx], cell2 = vidmem[cx + DOSBOX_HICOLOR_OFFSET/2];
+                    unsigned char chr  = cell1 & 0xFF, col = cell1 >> 8;
+                    unsigned char ext1 = cell2 & 0xFF, ext2 = cell2 >> 8;
 
-                    widefont <<= 1;
-                    if(flag_italic && line < VidCellHeight*3/4) widefont >>= 1;
+                    /*chr='A'; col=0x17; ext1=ext2=0;*/
 
-                    if(nine_pix && chr>=0xC0 && chr <= 0xDF)
-                        widefont |= (widefont & 2) >> 1;
-
-                    if((cursor_shape&0xFF) == 7)
+                    unsigned char font = FontBuffer[chr*32 + line];
+                    //unsigned char fg = col&0xF, bg = col>>4;
+                    if(ext2 == 7 && ext1 == 0x20) ext2 = ext1 = 0;
+                    bool flag_underline = ext2 & 0x01;
+                    bool flag_dim       = ext2 & 0x02;
+                    bool flag_italic    = ext2 & 0x04;
+                    bool flag_bold      = ext2 & 0x08;
+                    bool flag_blink     = ext2 & 0x20;
+                    bool flag_ext       = (ext2 & col & 0x80);
+                    if(!flag_ext)
                     {
-                        // Check underline from LINE ABOVE
-                        if(cy > 0)
-                        {
-                            unsigned short prev_ext = vidmem[cx + DOSBOX_HICOLOR_OFFSET/2 - cells_horiz];
-                            unsigned char prev_ext1 = prev_ext & 0xFF, prev_ext2 = prev_ext >> 8;
-                            if((prev_ext2 & 1) && line == 0) { /*widefont = 0x1FF;*/ /*bg =*/ ext1 = 8; }
-                        }
+                        flag_blink = col >> 7;
+                        ext1       = col>>4;   ext1 = (ext1&1)*4 + (ext1&2) + (ext1&4)/4 + (ext1&8);
+                        col        = (col&15); col = (col&1)*4 + (col&2) + (col&4)/4 + (col&8);
                     }
+                    //if(flag_blink && (MarioTimer & 32)) font = 0;
+
+                    unsigned widefont;
+                    if(cx == cursor_position)
+                        widefont = 0xFF << 1;
                     else
                     {
-                        if(flag_underline && line == (cursor_shape&0xFF))
+                        widefont = font;
+
+                        widefont <<= 1;
+                        if(flag_italic && line < VidCellHeight*3/4) widefont >>= 1;
+
+                        if(nine_pix && chr>=0xC0 && chr <= 0xDF)
+                            widefont |= (widefont & 2) >> 1;
+
+                        if((cursor_shape&0xFF) == 7)
                         {
-                            //widefont = 0x1FF;
-                            /*bg =*/ ext1 = 8;
+                            // Check underline from LINE ABOVE
+                            if(cy > 0)
+                            {
+                                unsigned short prev_ext = vidmem[cx + DOSBOX_HICOLOR_OFFSET/2 - cells_horiz];
+                                unsigned char prev_ext1 = prev_ext & 0xFF, prev_ext2 = prev_ext >> 8;
+                                if((prev_ext2 & 1) && line == 0) { /*widefont = 0x1FF;*/ /*bg =*/ ext1 = 8; }
+                            }
+                        }
+                        else
+                        {
+                            if(flag_underline && line == (cursor_shape&0xFF))
+                            {
+                                //widefont = 0x1FF;
+                                /*bg =*/ ext1 = 8;
+                            }
                         }
                     }
-                }
-                /*if(flag_ext)*/
-                {
-                    unsigned fg_attr = (col & 0x7F) | ((ext2 & 0x40) << 1);
-                    unsigned bg_attr = ext1;
-                    Uint16 fg = xterm256table[fg_attr];
-                    Uint16 bg = xterm256table[bg_attr];
-                    /*if(flag_bold || flag_dim)
+                    /*if(flag_ext)*/
                     {
-                        if(line&1) fg = fg + (0x4<<5) + (0x4<<0);
-                        else       fg = fg + (0x4<<5) + (0x4<<11);
-                    }*/
+                        unsigned fg_attr = (col & 0x7F) | ((ext2 & 0x40) << 1);
+                        unsigned bg_attr = ext1;
+                        Uint16 fg = xterm256table[fg_attr];
+                        Uint16 bg = xterm256table[bg_attr];
+                        /*if(flag_bold || flag_dim)
+                        {
+                            if(line&1) fg = fg + (0x4<<5) + (0x4<<0);
+                            else       fg = fg + (0x4<<5) + (0x4<<11);
+                        }*/
 
-                    // 
-                    const unsigned mode = flag_dim + flag_bold*2 + flag_italic*4*((line*4/VidCellHeight)%3);
-                    static const unsigned char taketables[12][16] =
-                    {
-/*mode 0*/{0,0,0,0,3,3,3,3,0,0,0,0,3,3,3,3,},
-/*mode 1*/{0,0,0,0,1,1,3,3,0,0,0,0,1,1,3,3,},
-/*mode 2*/{0,0,0,0,3,3,3,3,1,1,1,1,3,3,3,3,},
-/*mode 3*/{0,0,0,0,1,1,3,3,1,1,1,1,1,1,3,3,},
-/*mode 4*/{0,0,1,1,2,2,3,3,0,0,1,1,2,2,3,3,},
-/*mode 5*/{0,0,0,1,1,1,2,3,0,0,0,1,1,1,2,3,},
-/*mode 6*/{0,0,1,1,2,2,3,3,1,1,2,2,2,2,3,3,},
-/*mode 7*/{0,0,0,1,1,1,2,3,1,1,1,2,1,1,2,3,},
-/*mode 8*/{0,0,2,2,1,1,3,3,0,0,2,2,1,1,3,3,},
-/*mode 9*/{0,0,1,2,0,0,2,3,0,0,1,2,0,0,2,3,},
-/*mode 10*/{0,0,2,2,2,2,3,3,0,0,2,2,2,2,3,3,},
-/*mode 11*/{0,0,1,2,1,1,2,3,0,0,1,2,1,1,2,3,},
-                    };
-                    Uint16 colors[4] = {bg, xterm256_blend12[bg_attr][fg_attr], xterm256_blend12[fg_attr][bg_attr], fg};
-                    if(dbl_pix)
-                        for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
+                        // 
+                        const unsigned mode = flag_dim + flag_bold*2 + flag_italic*4*((line*4/VidCellHeight)%3);
+                        static const unsigned char taketables[12][16] =
                         {
-                            unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
-                            unsigned c = colors[taketables[mode][mask]];
-                            *draw++ = c;
-                            *draw++ = c;
-                        }
-                    else
-                        for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
-                        {
-                            unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
-                            unsigned c = colors[taketables[mode][mask]];
-                            *draw++ = c;
-                        }
+    /*mode 0*/{0,0,0,0,3,3,3,3,0,0,0,0,3,3,3,3,},
+    /*mode 1*/{0,0,0,0,1,1,3,3,0,0,0,0,1,1,3,3,},
+    /*mode 2*/{0,0,0,0,3,3,3,3,1,1,1,1,3,3,3,3,},
+    /*mode 3*/{0,0,0,0,1,1,3,3,1,1,1,1,1,1,3,3,},
+    /*mode 4*/{0,0,1,1,2,2,3,3,0,0,1,1,2,2,3,3,},
+    /*mode 5*/{0,0,0,1,1,1,2,3,0,0,0,1,1,1,2,3,},
+    /*mode 6*/{0,0,1,1,2,2,3,3,1,1,2,2,2,2,3,3,},
+    /*mode 7*/{0,0,0,1,1,1,2,3,1,1,1,2,1,1,2,3,},
+    /*mode 8*/{0,0,2,2,1,1,3,3,0,0,2,2,1,1,3,3,},
+    /*mode 9*/{0,0,1,2,0,0,2,3,0,0,1,2,0,0,2,3,},
+    /*mode 10*/{0,0,2,2,2,2,3,3,0,0,2,2,2,2,3,3,},
+    /*mode 11*/{0,0,1,2,1,1,2,3,0,0,1,2,1,1,2,3,},
+                        };
+                        Uint16 colors[4] = {bg, xterm256_blend12[bg_attr][fg_attr], xterm256_blend12[fg_attr][bg_attr], fg};
+                        if(dbl_pix)
+                            for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
+                            {
+                                unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
+                                unsigned c = colors[taketables[mode][mask]];
+                                *draw++ = c;
+                                *draw++ = c;
+                            }
+                        else
+                            for(unsigned i=0, j=nine_pix?9:8; i<j; ++i)
+                            {
+                                unsigned mask = ((widefont << 2) >> (8-i)) & 0xF;
+                                unsigned c = colors[taketables[mode][mask]];
+                                *draw++ = c;
+                            }
+                    }
                 }
             }
         }
+        cursor_old = cursor_now;
         SDL_Rect rect; rect.w=pixels_width; rect.h=pixels_height; rect.y=0; rect.x=0;
         SDL_UpdateTexture(texture, &rect, pixbuf.data(), pixels_width*sizeof(pixbuf[0]));
         SDL_RenderCopy(renderer, texture, nullptr, nullptr);
