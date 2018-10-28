@@ -327,6 +327,7 @@ void VisPutCursorAt(unsigned cx,unsigned cy)
 #else
     unsigned top    = VidCellHeight>8 ? VidCellHeight-4 : 6;
     unsigned bottom = VidCellHeight>8 ? VidCellHeight-3 : 7;
+    if(!InsertMode) top = VidCellHeight*2/8;
     unsigned size = (top<<8) | bottom;
 #endif
     VgaPutCursorAt(cx,cy, size);
