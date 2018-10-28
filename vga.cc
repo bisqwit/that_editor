@@ -201,7 +201,8 @@ namespace
             else { RenderFlushLines(); rect.y=line; rect.h=1; }
         };
 
-        unsigned cursor_now = cursor_x+cursor_y*cells_horiz+(cursor_shape<<16);
+        unsigned cursor_now = (cursor_x+cursor_y*cells_horiz+(cursor_shape<<16)) << 1;
+        cursor_now |= (MarioTimer / 12u) & 1;
         //#pragma omp parallel for num_threads(2)
         for(unsigned cy=0; cy<cells_vert; ++cy)
         {
@@ -210,7 +211,7 @@ namespace
 
             unsigned short* vidmem_bak   = VideoBuffer_Bak + (vidmem - VideoBuffer);
             int o = DOSBOX_HICOLOR_OFFSET/2;
-            if(cursor_now == cursor_old
+            if(cursor_now/2 == cursor_old/2
             && memcmp(vidmem_bak,   vidmem,   cells_horiz*2) == 0
             && memcmp(vidmem_bak+o, vidmem+o, cells_horiz*2) == 0)
             {
@@ -218,8 +219,8 @@ namespace
             }
             else
             {
-                memcpy(vidmem_bak,   vidmem,   cells_horiz*2);
-                memcpy(vidmem_bak+o, vidmem+o, cells_horiz*2);
+                //memcpy(vidmem_bak,   vidmem,   cells_horiz*2);
+                //memcpy(vidmem_bak+o, vidmem+o, cells_horiz*2);
             }
 
             for(unsigned line=0; line<VidCellHeight; ++line)
@@ -232,8 +233,8 @@ namespace
                     cursor_position = cursor_x;
                 }
 
-                if(cursor_position == ~0u && same) continue;
-                if(MarioTimer & 8) cursor_position = ~0u;
+                if(same && (cursor_position == ~0u || cursor_now==cursor_old)) continue;
+                if(cursor_now & 1) cursor_position = ~0u;
 
                 unsigned short* draw = &pixbuf[(cy*VidCellHeight+line)*bufpixels_width];
                 for(unsigned cx=0; cx<cells_horiz; ++cx)
@@ -259,7 +260,7 @@ namespace
                         ext1       = col>>4;   ext1 = (ext1&1)*4 + (ext1&2) + (ext1&4)/4 + (ext1&8);
                         col        = (col&15); col = (col&1)*4 + (col&2) + (col&4)/4 + (col&8);
                     }
-                    //if(flag_blink && (MarioTimer & 32)) font = 0;
+                    if(flag_blink && (MarioTimer & 32)) font = 0;
 
                     unsigned widefont;
                     if(cx == cursor_position)
@@ -335,7 +336,11 @@ namespace
             }
         }
         RenderFlushLines();
-        SDL_RenderPresent(renderer);
+        if(rect.y)
+        {
+            SDL_RenderPresent(renderer);
+            memcpy(VideoBuffer_Bak, VideoBuffer, sizeof(VideoBuffer));
+        }
         cursor_old = cursor_now;
     }
 }

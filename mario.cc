@@ -214,19 +214,19 @@ void MarioTranslate(
 
     unsigned char RevisedFontData[ 6 * 32 ];
 
-    const unsigned base = FatMode ? 0x80 : 0xC0;
+    #define M(n) MakeMarioColor(n)
+    static const EditorCharType chartables[6*4] =
+        { M(0xC0), M(0xC3), M(0xC4), M(0xC8), M(0xC9), M(0xCD),
+          M(0xC0), M(0xC3), M(0xC4), M(0xC8), M(0xC9), M(0xCD),
+          M(0x80), M(0x83), M(0x84), M(0x88), M(0x89), M(0x8D),
+          M(0x80), M(0x83), M(0x84), M(0x88), M(0x89), M(0x8D) };
+    static const unsigned char offsets[6*2] =
+        { 0,1,2,3,4,5, 0,1,2,3,4,5 };
+    unsigned char base = FatMode ? 0x80 : 0xC0;
+    unsigned shuffle = MarioTimer%6u;
+    const EditorCharType* const chartable = chartables + (FatMode ? 12 : 0) + shuffle;
 
-    const EditorCharType chartable[6] =
-        { MakeMarioColor(base + 0x0),
-          MakeMarioColor(base + 0x3),
-          MakeMarioColor(base + 0x4),
-          MakeMarioColor(base + 0x8),
-          MakeMarioColor(base + 0x9),
-          MakeMarioColor(base + 0xD)
-        };
-
-    unsigned fontdatasize  = 0;
-    unsigned numchars      = 0;
+    unsigned numchars   = 0;
     unsigned spritewide = 16;
     if(VidCellHeight >= 29) spritewide = 34;
 
@@ -248,7 +248,7 @@ void MarioTranslate(
             ch = 0x20;
 
         const unsigned char* SourceFontPtr = VgaFont + (ch * VidCellHeight);
-
+        unsigned fontdatasize = offsets[shuffle+numchars]*VidCellHeight;
         for(unsigned y=0; y<VidCellHeight; ++y)
         {
             RevisedFontData[fontdatasize++] =
