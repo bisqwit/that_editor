@@ -285,6 +285,8 @@ Caveats:
 * It also uses 8-bit CP437 font. There is no unicode support.
 * Rendering consumes a ton of CPU power right now. Some optimizations could be done mayhaps.
 * SDL2 is quite glitchy with how it reports keydown events for ctrl keys. Sometimes it reports a keydown for the plain key, immediately followed by a keydown for the key with ctrl modifier. Sometimes vice versa. This manifests as irritating glitches in this editor when you press ctrl-key combinations. I have tried my best to work around, but it is still glitchy. None of that happens in the DOS version.
+* Your window manager will probably eat and suppress half of the [hotkeys supported](doc/keys.txt) by this program, especially the function keys.
+* There is no way to run [DOS-inputter](https://iki.fi/bisqwit/source/inputter.html) with the Linux version. You will have to find other solutions if you want to use automated input.
 
 Sorry!
 
