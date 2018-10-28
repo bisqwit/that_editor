@@ -276,8 +276,10 @@ such as: https://sourceforge.net/projects/hx-dos/files/2.17/hxrt217.7z/download
 
 As of 2018-10-28, the editor can also be compiled on Linux.
 Go to the `32bit` subdirectory and run `make e`.
+You will need SDL2 development library installed.
 
 Note the usual disclaimers. This editor is not meant to be used by humans.
+Also, this version is hardcoded for Finnish keyboard layout. (Sorry!)
 
 ## Features
 
