@@ -60,5 +60,5 @@ shift-F6:	VGA mode change: Toggle double-width, without changing width
 F7:		VGA mode change: Toggle double-width, adjust font/height to keep window size unchanged
 shift-F7:	VGA mode change: Toggle double-width, without changing height
 F8, ^T:		Invoke the VGA mode change dialog
-F9:		VGA mode change: Toggle pseudo-Commodore64 mode with PET font if fontheight=8
+F9:		VGA mode change: Toggle pseudo-Commodore64 mode with PET font if fontheight=8 (right now broken, sorry!)
 F10:		VGA mode change: Toggle all-caps mode (use in conjunction with C64 mode)
