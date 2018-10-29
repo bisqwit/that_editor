@@ -496,7 +496,7 @@ private:
 #ifdef ATTRIBUTE_CODES_IN_VGA_ORDER
             static const signed char actions[46] = { 10,30,2,1,31,19,29,23,13,36,15,25,7,3,28,-1,20,-1,24,9,16,27,-1,8,35,0,12,21,-1,5,11,17,22,33,32,34,4,14,-1,-1,6,26,-1,-1,18,37};
 #endif
-            /*if(code >= 0 && code <= 45)*/ code = actions[code - 0]; // cekcpaka
+            /*if(code >= 0 && code <= 45)*/ code = actions[code - 0];
             switch(code >> 4) { case 0: fg256 = code&15; break;
                                 case 1: bg256 = code&15; break;
                                 default:flags |= 1u << (code&15); }

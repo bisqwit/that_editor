@@ -142,7 +142,7 @@ static void ProcessEvent(SDL_Event& ev)
                 #define ALPHA(c, rsym,shiftsym, ctrlsym, grsym, altsym) \
                     case c: \
                         if(altgr || (alt&&ctrl)) pending_input += grsym;    \
-                        else if(shift==!caps)  pending_input += shiftsym; \
+                        else if(shift==!caps)    pending_input += shiftsym; \
                         else if(alt)             pending_input += altsym;   \
                         else if(ctrl)            pending_input += ctrlsym;  \
                         else                     pending_input += rsym; \
@@ -204,7 +204,7 @@ static void ProcessEvent(SDL_Event& ev)
                     case SDL_SCANCODE_##n: \
                         if(alt||altgr)   pending_input += std::string_view("\0" altsym,2); \
                         else if(ctrl)    pending_input += std::string_view("\0" ctrlsym,2); \
-                        else if(shift) pending_input += std::string_view("\0" shiftsym,2); \
+                        else if(shift)   pending_input += std::string_view("\0" shiftsym,2); \
                         else             pending_input += std::string_view("\0" plainsym,2); \
                         break;
                 FUNC(F1, "\73", "\124", "\150", "\136")

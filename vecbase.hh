@@ -442,22 +442,8 @@ public:
         len -= count;
     }
 
-    void reserve(size_type newcap)
+    void shrink_to(size_type newcap)
     {
-        if(cap < newcap)
-        {
-            T * newdata = allocate(newcap);
-            if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", (unsigned)newcap);
-            move_construct(&newdata[0], &data[0], len);
-            destroy(&data[0], len);
-            deallocate(data, cap);
-            data = newdata;
-            cap  = newcap;
-        }
-    }
-    void shrink_to_fit()
-    {
-        size_type newcap = size();
         if(newcap == cap) return;
         T * newdata = allocate(newcap);
         if(!newdata) fprintf(stdout, "VecType: Failed to allocate %u bytes\n", (unsigned)newcap);
@@ -466,6 +452,14 @@ public:
         deallocate(data, cap);
         data = newdata;
         cap  = newcap;
+    }
+    void reserve(size_type newcap)
+    {
+        if(cap < newcap) shrink_to(newcap);
+    }
+    void shrink_to_fit()
+    {
+        shrink_to(size());
     }
 
     void pop_back()
