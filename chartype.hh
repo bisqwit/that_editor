@@ -1,4 +1,4 @@
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(USE_DOSCOLORS)
 /* Use 16-bit element types (VGA colors) in the 16-bit code
  * in order to avoid running out of memory
  */
@@ -8,11 +8,6 @@
  * requires a patched DOSBox though
  */
 # define ATTRIBUTE_CODES_IN_ANSI_ORDER
-#endif
-
-#ifdef USE_DOSCOLORS
-# define ATTRIBUTE_CODES_IN_VGA_ORDER
-# undef ATTRIBUTE_CODES_IN_ANSI_ORDER
 #endif
 
 
@@ -159,7 +154,11 @@ static inline EditorCharType RecolorBgOnly(EditorCharType ch, EditorCharType att
 
 static inline void VidmemPutEditorChar(EditorCharType ch, unsigned short*& Tgt)
 {
-    if(sizeof(EditorCharType) > 2) Tgt[(DOSBOX_HICOLOR_OFFSET/2)] = (ch >> 16);
+    if(sizeof(EditorCharType) > 2)
+    {
+        Tgt[(DOSBOX_HICOLOR_OFFSET/2)] = (ch >> 16);
+        if(FatMode) Tgt[(DOSBOX_HICOLOR_OFFSET/2)+1] = (ch >> 16);
+    }
     *Tgt++ = ch;
     if(FatMode) *Tgt++ = ch | 0x80;
 }

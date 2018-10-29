@@ -10,8 +10,8 @@ rem bcc -S -3 -ff -k- -w -w-sig -w-inl -P -d -a -O -mc -I../include -L../lib mai
 rem del e.exe
 rem main.exe e.exe
 
-REM GOTO BUILD_LARGE
-GOTO BUILD_COMPACT
+GOTO BUILD_LARGE
+REM GOTO BUILD_COMPACT
 
 :BUILD_COMPACT
 d:\editor\bin\bcc -k- -S -P -ff -Ff -x- -RT- -w -w-sig -w-inl -d -a -O2 -Os -OW -f287 -4 -mc -I..\include vga.cc

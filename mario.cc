@@ -222,8 +222,10 @@ void MarioTranslate(
           M(0x80), M(0x83), M(0x84), M(0x88), M(0x89), M(0x8D) };
     static const unsigned char offsets[6*2] =
         { 0,1,2,3,4,5, 0,1,2,3,4,5 };
-    unsigned char base = FatMode ? 0x80 : 0xC0;
-    unsigned shuffle = MarioTimer%6u;
+    unsigned short base = FatMode ? 0x80 : 0xC0;
+    // shuffle the tiles on each frame to ensure that VGA caching
+    // will detect changes and re-draw the scanlines.
+    unsigned shuffle = (MarioTimer) % 6u;
     const EditorCharType* const chartable = chartables + (FatMode ? 12 : 0) + shuffle;
 
     unsigned numchars   = 0;

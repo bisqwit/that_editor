@@ -188,7 +188,7 @@ namespace
     }
     void SDL_ReDraw(bool force)
     {
-        if(force) cursor_old = ~0ul;
+        if(force) cursor_old = ~0u;
 
         SDL_Rect rect;
         rect.x=0; rect.w=bufpixels_width;
@@ -266,8 +266,6 @@ namespace
                     unsigned char chr  = cell1 & 0xFF, col = cell1 >> 8;
                     unsigned char ext1 = cell2 & 0xFF, ext2 = cell2 >> 8;
 
-                    /*chr='A'; col=0x17; ext1=ext2=0;*/
-
                     unsigned char font = FontBuffer[chr*32 + line];
                     //unsigned char fg = col&0xF, bg = col>>4;
                     if(ext2 == 7 && ext1 == 0x20) ext2 = ext1 = 0;
@@ -304,7 +302,7 @@ namespace
                             if(cy > 0)
                             {
                                 unsigned short prev_ext = vidmem[cx + DOSBOX_HICOLOR_OFFSET/2 - cells_horiz];
-                                unsigned char prev_ext1 = prev_ext & 0xFF, prev_ext2 = prev_ext >> 8;
+                                unsigned char /*prev_ext1 = prev_ext & 0xFF,*/ prev_ext2 = prev_ext >> 8;
                                 if((prev_ext2 & 1) && line == 0) { /*widefont = 0x1FF;*/ /*bg =*/ ext1 = 8; }
                             }
                         }
@@ -361,8 +359,8 @@ namespace
         RenderFlushLines();
         if(rect.y) { SDL_RenderPresent(renderer); }
         cursor_old = cursor_now;
-        if(errors) cursor_old = ~0ul;
-        if(redoes) { --redoes; cursor_old = ~0ul; }
+        if(errors) cursor_old = ~0u;
+        if(redoes) { --redoes; cursor_old = ~0u; }
     }
 }
 #endif

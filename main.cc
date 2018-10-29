@@ -1720,7 +1720,9 @@ int main(int argc, char**argv)
     VisSetCursor();
 
 #if !(defined(__BORLANDC__) || defined(__DJGPP__))
-    VgaSetCustomMode(80,25, 16, use9bit=true, dblw=false,dblh=false, 1);
+    //VgaSetCustomMode(80,25, 16, use9bit=true, dblw=false,dblh=false, 1);
+    VgaSetCustomMode(132,80, 12, use9bit=false, dblw=false,dblh=false, 1);
+    //VgaSetCustomMode(80,25, 32, use9bit=true, dblw=false,dblh=false, 1);
 #endif
 
 #if defined(__BORLANDC__) || defined(__DJGPP__)

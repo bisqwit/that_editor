@@ -322,11 +322,11 @@ public:
         }}
         all_states.resize(all_states.size()/2);
 
-        fprintf(stdout, "Done; strings=%zu, strtab=%zu, opt=%zu, states=%zu; %u merged opts; %u state bytes\n",
-            all_strings.size(),
-            string_tables.size(),
-            all_options.size()/sizeof(option),
-            all_states.size()/sizeof(void*),
+        fprintf(stdout, "Done; strings=%lu, strtab=%lu, opt=%lu, states=%lu; %u merged opts; %u state bytes\n",
+            (unsigned long) (all_strings.size()),
+            (unsigned long) (string_tables.size()),
+            (unsigned long) (all_options.size()/sizeof(option)),
+            (unsigned long) (all_states.size()/sizeof(void*)),
             options_merged, state_bytes);
         fflush(stdout);
         // colornames & colordata will be freed automatically due to scope.
