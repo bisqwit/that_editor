@@ -90,6 +90,7 @@ int MyGetch() { return kbhitbuf[kbhitptr++]; }
 #include <SDL.h>
 #include <cstdlib>
 #include <string>
+#include <string_view>
 
 #define CTRL(c) ((c) & 0x1F)
 
