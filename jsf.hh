@@ -8,6 +8,7 @@
 # define strcasecmp stricmp
 # define strncasecmp strnicmp
 #endif
+#pragma GCC dependency "util/find_jsf_formula.cc"
 
 #ifndef __BORLANDC__
 # //define JSF_FORGO_SAVINGS
