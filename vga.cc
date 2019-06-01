@@ -713,6 +713,46 @@ void VgaSetCustomMode(
         VgaEnableFontAccess();
         if(DCPUpalette) VgaSetFont(8,256, 0, dcpu16font);
         if(C64palette) VgaSetFont(8, 256-64, 32,c64font); // Contains 20..DF
+
+/*static const unsigned char aeiofont[8*4]
+{
+    0b00000000,//ŋ mapped to á
+    0b00000000,
+    0b00000000,
+    0b11011100,
+    0b01100110,
+    0b01100110,
+    0b01000110,
+    0b01011100,
+
+    0b00000000,//Ŋ mapped to í
+    0b11000110,
+    0b11100110,
+    0b11110110,
+    0b11011110,
+    0b11001110,
+    0b11000110,
+    0b11011100,
+
+    0b00000000,//š mapped to ó
+    0b01101100,
+    0b00111000,
+    0b01111110,
+    0b11000000,
+    0b01111100,
+    0b00000110,
+    0b11111100,
+
+    0b01101100,//ž mapped to ú
+    0b00111000,
+    0b00000000,
+    0b11111110,
+    0b00011100,
+    0b00111000,
+    0b01110000,
+    0b11111110,
+};
+        VgaSetFont(8, 4, 0xA0, aeiofont);*/
     }
 
 
