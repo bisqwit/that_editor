@@ -36,11 +36,15 @@ static bool use9bit=false, dblw=false, dblh=false;
 
 static inline int isalnum_(unsigned char c)
 {
-    return isalnum(c) || c == '_';
+    return (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57)/*isalnum(c)*/ || c == '_';
 }
 static inline int ispunct_(unsigned char c)
 {
     return !isspace(c) && !isalnum_(c);
+}
+static inline int isspace_or_punct(unsigned char c)
+{
+    return !isalnum_(c);
 }
 
 // Return just the filename part of pathfilename
@@ -578,13 +582,13 @@ static void VisRenderTitleAndStatus(int force=0)
     Hdr.resize(FatMode ? StatusWidth*2 : StatusWidth);
     // We do the Mario update every frame, but this buffer is updated
     // less frequently, only ~18 times a second, because it's rather heavy.
-    #ifdef __BORLANDC__
+    /*#ifdef __BORLANDC__
     unsigned long now_when = (*(unsigned long*)MK_FP(0x40,0x6C));
     #elif defined(__DJGPP__)
     unsigned long now_when = _farpeekl(_dos_ds, 0x46C);
-    #else
+    #else*/
     unsigned long now_when = MarioTimer & ~7;
-    #endif
+    //#endif
     if(now_when != last_check_when)
     {
         last_check_when = now_when;
@@ -599,7 +603,7 @@ static void VisRenderTitleAndStatus(int force=0)
         // RIGHT-side parts
         const char* Part3 = StatusGetClock();
         static char Part4[26]; sprintf(Part4, "%lu/%lu C", chars_file, chars_typed); //11+1+11+2+nul
-        static const char Part5[] = "+4.0øC"; // temperature degC degrees celsius
+        static const char Part5[] = "-6.4øC"; // temperature degC degrees celsius
 
         const char* Part6 = StatusGetCPUspeed();
 
@@ -1671,7 +1675,7 @@ static inline void k_ctrlleft(void)
     // First go one left.
     k_left();
     // Skip possible space
-    while(!at_begin() && (at_line_end() || isspace(cur_ch) || ispunct_(cur_ch))) { k_left(); }
+    while(!at_begin() && (at_line_end() || isspace_or_punct(cur_ch))) { k_left(); }
     // Then skip to the beginning of the current word
     while(!at_begin() && !at_line_end() && isalnum_(cur_ch)) { k_left(); }
     // Then undo the last k_left, unless we're at the beginning of the file
@@ -1690,7 +1694,7 @@ static inline void k_ctrlright(void)
     if(at_end()) return;
 
     // First skip possible space
-    while(!at_end() && (at_line_end() || isspace(cur_ch) || ispunct_(cur_ch))) { k_right(); }
+    while(!at_end() && (at_line_end() || isspace_or_punct(cur_ch))) { k_right(); }
     // Then skip to the end of the current word
     while(!at_line_end() && isalnum_(cur_ch)) { k_right(); }
 
